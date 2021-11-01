@@ -1,1 +1,2 @@
+/* A good idea, currently blocked in practice by Cross-Origin Read Blocking (CORB). This could be done with a local file. */
 @import 'https://raw.githubusercontent.com/mclare/edtech_styles/main/sakaiCustomCSSLessons.css' screen;
