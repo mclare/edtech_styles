@@ -1,0 +1,25 @@
+# Brock University colours and styles
+.brocku-valign {vertical-align: top !important;
+  background-color: #CC0000;}
+#Brock Style
+.brocku-brock-background {background-color: #CC0000;}
+.brocku-brock-font {font-color: #CC0000;}
+.brocku-brock-logo-med {
+ background: #CC0000 url('https://brocku.ca/wp-content/themes/brocku-mu-base/images/brocku-logo-rgb.png?pressbooks=1') top left;
+ width:280px;
+ height:168px;
+}
+.brocku-brock-logo-small {
+ background: #CC0000 url('https://discover.brocku.ca/wp-content/themes/brocku-mu-base/images/brocku-logo-rgb.svg?pressbooks=1') top left;
+ width:152px;
+ height:92px;
+}
+
+#Used in some books
+.safesport-cell-v1 {
+  vertical-align: top !important;
+  background-color: #E8F1F8;
+}
+.safesport-bullet-v1 {
+  line-height:1.8;
+}
