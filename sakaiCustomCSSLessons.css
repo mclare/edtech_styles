@@ -1,0 +1,51 @@
+/* Give headers a nice red box around them */
+/* mbrousseau created this to support IASC-1P02-D02-S01-Online-2019. It was then pilfered and slightly modified by mbreschuk, constrained to lessons by mclare*/
+.section h1{
+	font-size: 30px;
+	font-weight: bold;
+	color:#FFFFFF;
+	background-color:#CC0000;
+	width:100%;
+	height:50px;
+	padding:20px;
+	margin-bottom:0px;
+	border-radius:20px;
+}
+
+.section h2 {
+	font-size: 20px;
+	color:#FFFFFF;
+	background-color:#CC0000;
+	width:100%;
+	height:50px;
+	padding:15px;
+	margin-top:0px;
+	border-radius:20px;
+}
+
+.section h3 {
+	font-size: 20px;
+	color:#000000;
+	background-color:#C5C5C5;
+	width:100%;
+	padding:10px;
+	margin-top:0px;
+	border-radius:10px;
+}
+.brocku-brock-background {background-color: #CC0000;}
+.brocku-brock-font {font-color: #CC0000;}
+.brocku-brock-logo-med {
+ background: #CC0000 url('https://brocku.ca/wp-content/themes/brocku-mu-base/images/brocku-logo-rgb.png?pressbooks=1') top left;
+ width:280px;
+ height:168px;
+}
+.brocku-brock-logo-small {
+ background: #CC0000 url('https://discover.brocku.ca/wp-content/themes/brocku-mu-base/images/brocku-logo-rgb.svg?pressbooks=1') top left;
+ width:152px;
+ height:92px;
+}
+
+/* Make the background of the Student Pages & Checklist grey instead of blue */
+.checklistDiv, .studentDiv, .studentContentTable {
+	background-color:#e0e0e0 !important;
+}

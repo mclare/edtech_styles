@@ -1,7 +1,7 @@
-# Brock University colours and styles
+/* Brock University colours and styles */
 .brocku-valign {vertical-align: top !important;
   background-color: #CC0000;}
-#Brock Style
+/* Brock Style */
 .brocku-brock-background {background-color: #CC0000;}
 .brocku-brock-font {font-color: #CC0000;}
 .brocku-brock-logo-med {
@@ -15,7 +15,7 @@
  height:92px;
 }
 
-#Used in some books
+/* Used in some books */
 .safesport-cell-v1 {
   vertical-align: top !important;
   background-color: #E8F1F8;
