@@ -15,6 +15,11 @@
  height:92px;
 }
 
+/* a11y improvements */
+.textbox p { /* overrides justify alignment https://www.w3.org/TR/WCAG20-TECHS/G169.html */
+  text-align:left;
+}
+
 /* Used in some books */
 .safesport-cell-v1 {
   vertical-align: top !important;
