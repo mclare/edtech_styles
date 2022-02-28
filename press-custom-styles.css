@@ -23,15 +23,6 @@
 #content p { /* overrides justify alignment https://www.w3.org/TR/WCAG20-TECHS/G169.html */
   text-align:left;
 }
-
-/* Used in some books */
-.safesport-cell-v1 {
-  vertical-align: top !important;
-  background-color: #E8F1F8;
-}
-.safesport-bullet-v1 {
-  line-height:1.8;
-}
 table caption {
   color: #444;
 }
