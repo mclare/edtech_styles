@@ -1,0 +1,66 @@
+<!-- OrgId {OrgId} - OrgName {OrgName} - OrgUnitId {OrgUnitId} -->
+<div id="brock-org-status"></div>
+<script>
+
+function format(resp) {
+  try {
+    var json = JSON.parse(resp);
+    return JSON.stringify(json, null, '\t');
+  } catch(e) {
+    return resp;
+  }
+}
+
+function brockOrgStatus (result) {
+	console.log("brockOrgStatus called");
+	
+    console.log("Active Status2");
+    console.log(result.IsActive);
+	
+    console.log("StartDate");
+    console.log(result.StartDate);
+
+	dateActive = false;
+	if (result.StartDate == null)  dateActive = true;
+	if (!dateActive) {
+	 console.log("Looking harder at date");	
+		
+		 //dateActive = true;
+		 
+	
+}
+
+  	message = "Cannot determin if site is active or not.";
+  	if (result.IsActive == true) message = "<strong>Site Status: Active.</strong>";
+  	else if (result.IsActive == false) message = "<strong>Site Status: Inactive.</strong><br /><p>When ready to teach with this site, Instructors can activate their course in the Navbar above. <strong>Course Admin</strong> &gt; <strong>Course Offering Information</strong> &gt; scroll down the page to find the <strong>Course is active</strong>checkbox and select it &gt; <strong>Save</strong> at the bottom of the page.</p>";
+		
+  	document.getElementById('brock-org-status').innerHTML = message;
+ 
+	
+}
+
+function brockOrgStatusCheck () {
+	console.log("brockOrgStatusCheck called");
+	//jQuery AJAX call for JSON info
+	$.get("/d2l/api/lp/1.36/courses/{OrgUnitId}", function(data, status){
+  
+	  console.log("Result Formated");
+	  result = format(data);
+	  console.log(result);
+
+	  console.log("Active Status");
+	  console.log(result.IsActive);
+	  
+	  brockOrgStatus(result);
+	});
+
+}
+
+
+//Wait until the page is fully loaded!
+window.addEventListener('load', function () {
+   brockOrgStatusCheck();
+})
+
+
+</script>
