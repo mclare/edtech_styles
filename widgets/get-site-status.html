@@ -17,36 +17,38 @@ function brockOrgStatus (result) {
     console.log("Active Status "+result.IsActive);
 	
 	message = "Cannot determine if site is active or not.";
+	dateMessage = "";
+	dateInstructions = " &gt; uncheck or modify <strong>Course has start date</strong> ";
 	
 	if (result.IsActive == true) {
+		
+		message = "<strong>Site Status: Active.</strong>";
+
 		dateActive = false;
 		if (result.StartDate == null)  dateActive = true;
-		if (!dateActive) {
+		today = new Date();
+		console.log("Looking harder at date. It is now "+today);	
 
-			today = new Date();
-			console.log("Looking harder at date. It is now "+today);	
+		var startDate = new Date(result.StartDate);
+		var endDate = new Date(result.EndDate);
 
-			//dateActive = true;
-			var startDate = new Date(result.StartDate);
-			var endDate = new Date(result.EndDate);
-
-			//Working date logic for console 
-			if (startDate.getTime() < today) {
+		//Working date logic for console 
+		if (startDate.getTime() < today) {
 			console.log("StartDate is before today "+result.StartDate);
-			}
-			if (endDate.getTime() > today) {
+			dateMessage = ", and set to start in the future";
+		}
+		if (endDate.getTime() > today) {
 			console.log("EndDate is after today "+result.EndDate);
-			}
-			if (startDate.getTime() < today && endDate.getTime() > today) {
-
-			}
-	}
+		}
+		if (startDate.getTime() < today && endDate.getTime() > today) {
+			console.log("Sweet spot");
+			message = "<strong>Site Status: Active</strong><br />Students gained access "+startDate+" Today is"+Date.today().toString("dddd d MMMM yyyy");
+		}
 }
 
-  	
-  	if (result.IsActive == true) message = "<strong>Site Status: Active.</strong>";
-  	else if (result.IsActive == false) message = "<strong>Site Status: Inactive.</strong><br /><p>When ready to teach with this site, Instructors can activate their course in the Navbar above. <strong>Course Admin</strong> &gt; <strong>Course Offering Information</strong> &gt; scroll down the page to find the <strong>Course is active</strong>checkbox and select it &gt; <strong>Save</strong> at the bottom of the page.</p>";
-		
+	if (result.IsActive == false) message = "<strong>Site Status: Inactive"+dateMessage+".</strong><p>When ready to teach with this site, Instructors can activate their course in the Navbar above. <strong>Course Admin</strong> &gt; <strong>Course Offering Information</strong> &gt; scroll down the page to find the <strong>Course is active</strong>checkbox and select it "+dateInstructions+" &gt; <strong>Save</strong> at the bottom of the page.</p>";
+	
+	//Place message in div
   	document.getElementById('brock-org-status').innerHTML = message;
  
 	
@@ -65,11 +67,9 @@ function brockOrgStatusCheck () {
 	});
 }
 
-
 //Wait until the page is fully loaded!
 window.addEventListener('load', function () {
    brockOrgStatusCheck();
 })
-
 
 </script>
