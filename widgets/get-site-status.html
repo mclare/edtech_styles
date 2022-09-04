@@ -1,7 +1,7 @@
 <!-- OrgId {OrgId} - OrgName {OrgName} - OrgUnitId {OrgUnitId} -->
 <div id="brock-org-status"></div>
 <script>
-
+//Created by Matt Clare Saturday September 3, 2022 https://github.com/mclare/edtech_styles/blob/main/widgets/get-site-status.html
 function format(resp) {
   try {
     var json = JSON.parse(resp);
@@ -13,19 +13,17 @@ function format(resp) {
 
 function brockOrgStatus (result) {
 	console.log("brockOrgStatus called");
-	
-    console.log("Active Status "+result.IsActive);
-	
-	message = "Cannot determine if site is active or not.";
 	dateMessage = "";
-	dateInstructions = " &gt; uncheck or modify <strong>Course has start date</strong> ";
+	dateInstructions = "";
+	message = "<strong>Site Status: Active.</strong>";
 	
-	if (result.IsActive == true) {
-		
-		message = "<strong>Site Status: Active.</strong>";
+	if (result.IsActive == false) {
+		dateMessage  = "Inactive.";
+    	console.log("Active Status "+result.IsActive);
+	}
 
-		dateActive = false;
-		if (result.StartDate == null)  dateActive = true;
+	dateActive = true;
+	if (result.StartDate != null) {
 		today = new Date();
 		console.log("Looking harder at date. It is now "+today);	
 
@@ -33,25 +31,29 @@ function brockOrgStatus (result) {
 		var endDate = new Date(result.EndDate);
 
 		//Working date logic for console 
-		if (startDate.getTime() < today) {
-			console.log("StartDate is before today "+result.StartDate);
-			dateMessage = ", and set to start in the future";
+		if (endDate.getTime() < today) { //Enddate has passed
+			console.log("EndDate has passed "+result.EndDate);
+			dateActive = false;
+			dateMessage = dateMessage + " <strong>Course End Date in the past.</strong>";
+			/*
+			dateInstructions = "&gt; change the <strong>Start Date</strong> ";
+			*/
 		}
-		if (endDate.getTime() > today) {
-			console.log("EndDate is after today "+result.EndDate);
+		else { //Before Enddate 
+			if (startDate.getTime() > today) {
+				console.log("StartDate is in the future "+result.StartDate);
+				dateActive = false;
+				dateMessage = dateMessage + " Course Start Date in the future.";
+				dateInstructions = "&gt; change the <strong>Start Date</strong> ";
+			}
 		}
-		if (startDate.getTime() < today && endDate.getTime() > today) {
-			console.log("Sweet spot");
-			message = "<strong>Site Status: Active</strong><br />Students gained access "+startDate+" Today is"+Date.today().toString("dddd d MMMM yyyy");
-		}
-}
 
-	if (result.IsActive == false) message = "<strong>Site Status: Inactive"+dateMessage+".</strong><p>When ready to teach with this site, Instructors can activate their course in the Navbar above. <strong>Course Admin</strong> &gt; <strong>Course Offering Information</strong> &gt; scroll down the page to find the <strong>Course is active</strong>checkbox and select it "+dateInstructions+" &gt; <strong>Save</strong> at the bottom of the page.</p>";
-	
-	//Place message in div
+	//Students cannot see site for reasons
+	if (result.IsActive == false|| dateActive == false) message = "<strong>Site Status: "+dateMessage+"</strong><p>When ready to teach with this site, Instructors can activate this course in the Navbar above. <strong>Course Admin</strong> &gt; <strong>Course Offering Information</strong> &gt; scroll down the page to find the <strong>Course is active</strong> checkbox and select it "+dateInstructions+" &gt; <strong>Save</strong> at the bottom of the page.</p>";
+	}
+		//Place message in div
   	document.getElementById('brock-org-status').innerHTML = message;
  
-	
 }
 
 function brockOrgStatusCheck () {
@@ -61,7 +63,7 @@ function brockOrgStatusCheck () {
   
 	  console.log("Result Formated");
 	  result = format(data);
-	  console.log(result);
+	  //console.log(result);
 	  
 	  brockOrgStatus(result);
 	});
