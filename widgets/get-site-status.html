@@ -39,20 +39,22 @@ function brockOrgStatus (result) {
 			dateInstructions = "&gt; change the <strong>Start Date</strong> ";
 			*/
 		}
-		else { //Before Enddate 
-			if (startDate.getTime() > today) {
+		else if (startDate.getTime() > today) { //Started
 				console.log("StartDate is in the future "+result.StartDate);
 				dateActive = false;
 				dateMessage = dateMessage + " Course Start Date in the future.";
 				dateInstructions = "&gt; change the <strong>Start Date</strong> ";
-			}
 		}
-
-	//Students cannot see site for reasons
-	if (result.IsActive == false|| dateActive == false) message = "<strong>Site Status: "+dateMessage+"</strong><p>When ready to teach with this site, Instructors can activate this course in the Navbar above. <strong>Course Admin</strong> &gt; <strong>Course Offering Information</strong> &gt; scroll down the page to find the <strong>Course is active</strong> checkbox and select it "+dateInstructions+" &gt; <strong>Save</strong> at the bottom of the page.</p>";
 	}
-		//Place message in div
-  	document.getElementById('brock-org-status').innerHTML = message;
+	//Students cannot see site for reasons
+	if (result.IsActive == false|| dateActive == false) {
+		message = "<strong>Site Status: "+dateMessage+"</strong><p>When ready to teach with this site, Instructors can activate this course in the Navbar above. <strong>Course Admin</strong> &gt; <strong>Course Offering Information</strong> &gt; scroll down the page to find the <strong>Course is active</strong> checkbox and select it "+dateInstructions+" &gt; <strong>Save</strong> at the bottom of the page.</p>";
+		document.getElementById('brock-org-status').innerHTML = message; //Place message in div}
+	}
+	else {
+		console.log("Hiding Course Activation Status");
+		document.getElementById('brock-org-status').parentNode.style.display='none'; //Remove div and widget
+  	}
  
 }
 
@@ -60,7 +62,7 @@ function brockOrgStatusCheck () {
 	console.log("brockOrgStatusCheck called");
 	//jQuery AJAX call for JSON info
 	$.get("/d2l/api/lp/1.36/courses/{OrgUnitId}", function(data, status){
-  
+
 	  console.log("Result Formated");
 	  result = format(data);
 	  //console.log(result);
