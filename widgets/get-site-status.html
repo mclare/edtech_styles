@@ -31,7 +31,7 @@ function brockOrgStatus (result) {
 		var endDate = new Date(result.EndDate);
 
 		//Working date logic for console 
-		if (endDate.getTime() < today) { //Enddate has passed
+		if (startDate.getTime() > today && endDate.getTime() < today) { //Enddate has passed
 			console.log("EndDate has passed "+result.EndDate);
 			dateActive = false;
 			dateMessage = dateMessage + " <strong>Course End Date in the past.</strong>";
