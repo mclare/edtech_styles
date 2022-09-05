@@ -36,19 +36,19 @@ function brockOrgStatus (result) {
 			dateActive = false;
 			dateMessage = dateMessage + " <strong>Course End Date in the past.</strong>";
 			/*
-			dateInstructions = "&gt; change the <strong>Start Date</strong> ";
+			dateInstructions = "&rarr; change the <strong>Start Date</strong> ";
 			*/
 		}
 		else if (startDate.getTime() > today) { //Started
 				console.log("StartDate is in the future "+result.StartDate);
 				dateActive = false;
 				dateMessage = dateMessage + " Course Start Date in the future.";
-				dateInstructions = "&gt; change the <strong>Start Date</strong> ";
+				dateInstructions = "&rarr; change the <strong>Start Date</strong> ";
 		}
 	}
 	//Students cannot see site for reasons
 	if (result.IsActive == false|| dateActive == false) {
-		message = "<strong>Site Status: "+dateMessage+"</strong><p>When ready to teach with this site, Instructors can activate this course in the Navbar above. <strong>Course Admin</strong> &gt; <strong>Course Offering Information</strong> &gt; scroll down the page to find the <strong>Course is active</strong> checkbox and select it "+dateInstructions+" &gt; <strong>Save</strong> at the bottom of the page.</p>";
+		message = "<strong>Site Status: "+dateMessage+"</strong><p>When ready to teach with this site, Instructors can activate this course in the Navbar above. <strong>Course Admin</strong> &rarr; <strong><a href=\"/d2l/lp/manageCourses/course_offering_info_viewedit.d2l?ou={OrgUnitId}\">Course Offering Information</a></strong> &rarr; scroll down the page to find the <strong>Course is active</strong> checkbox and select it "+dateInstructions+" &rarr; <strong>Save</strong> at the bottom of the page.</p>";
 		document.getElementById('brock-org-status').innerHTML = message; //Place message in div}
 	}
 	else {
