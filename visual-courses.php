@@ -338,9 +338,8 @@ file_put_contents("../page_cache/$term_tag.html",$page);
 echo $page;
 
 echo "<div><small>Page load took ";
-print "\n\n<!-- ".microtime()." - $starttime -->\n\n";
-echo  microtime(TRUE) - $starttime;
-echo " seconds. Source: $source.</small></div>";
+$loadtime = microtime(TRUE) - $starttime;
+echo " $loadtime seconds. Source: $source.</small></div>";
 	
 ?>	
 </body>
