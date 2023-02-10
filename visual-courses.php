@@ -7,7 +7,7 @@ Results are formatted as a Google Chart and displayed in a table.
 Uses apc, whih is well supported now, but should work without it.
 */
 
-$start_time = microtime(TRUE);
+$starttime = microtime(TRUE);
 
 $apc_cache_length = 60;
 // This is a list of courses that are currently offered.
@@ -337,7 +337,7 @@ file_put_contents("../page_cache/$term_tag.html",$page);
 
 echo $page;
 
-echo "<div><small>Page load took ";
+echo "<div><small>";
 $endtime = microtime(true); 
 printf("Page loaded in %f seconds", $endtime - $starttime );
 echo ".</small></div>";
