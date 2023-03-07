@@ -3,7 +3,7 @@
 //This script will send an email to all users in the Instructor role in a Sakai Project Site
 //Credit goes to GitHub CoPilot ;)
 //Source CSV files
-$sakaiSitesFile = 'non-course-site-enrollment-20230228-092402.csv'; //Non-Course Site Enrollment report exported from https://data.ca.longsight.com/textreport
+$sakaiSitesFile = 'non-course-site-enrollment-20230307-091001.csv'; //Non-Course Site Enrollment report exported from https://data.ca.longsight.com/textreport (includes deleted sites)
 $BLEUsersFile = 'Users.csv'; //From Brightspace Data Hub
 $DoNotBotherUsersFile = 'DoNotBotherUsers.csv';
 $SoftDeletedSitesFile = 'softDeletedSites.csv'; //This is the worst data we have. This is not included in data.ca.longsight.com reports, it is copyied from Admin Site Setup.
@@ -14,7 +14,7 @@ $sakai="lms.brocku.ca";
 $brightspace="brightspace.brocku.ca";
 $from = "edtech@brocku.ca";
 $subject = "Reminder about Sakai Project Sites";
-$message = array("<p>This is a reminder that on June 30, 2023 <a href=\"https://$sakai/\">lms.brocku.ca</a> will no longer point to Sakai. Navigation links across Brock University’s web presence will begin to point to <a href=\"https://$brightspace/\">Brightspace</a>.</p>
+$message = array("<p>This is a reminder that on June 30, 2023 <a href=\"https://$sakai/\">lms.brocku.ca</a> will no longer point to Sakai. Navigation links across Brock University's web presence will begin to point to <a href=\"https://$brightspace/\">Brightspace</a>.</p>
 <p>You can learn more about <a href=\"https://brocku.ca/pedagogical-innovation/next-lms/\">Brock University's LMS transition from Sakai to Brightspace on the Centre for Pedagogical Innovation (CPI) website</a>.</p>
 <p>New project sites can be created using the Create Project Site widget on the main page of <a href=\"https://$brightspace/\">Brightspace</a> right now.</p>
 <p>As someone in the Instructor role in the following Sakai %s, you may wish to take action on the following %u Sakai Project Sites before June 30, 2023:</p>"); //Note the %u for the sprintf later
@@ -140,8 +140,7 @@ Load last modfied date for each site?
 $sent = 0;
 //Get ready to send message to each user
 //Print statements for monitoring, stdout, etc.
-print $messageHTML[0];
-
+print "<html><head><title>$subject</title></head><body>\n";
 foreach ($toSend as $user => $data) {
 
     $to = $data['email'];
@@ -156,7 +155,7 @@ foreach ($toSend as $user => $data) {
     print "<hr />\n<pre>sent: $sent <hr /><div>";
     print "\nto: ".$to;
     print "\nsubject: ".$subject."</pre>";
-    print "\n<!--message--><div style=\"color: rgb(32, 33, 34); font-family: Verdana; font-size: 12pt;\">".strip_tags($emailMessage,array('a','li','ol','ul','small','p','br','hr'));
+    print "\n<!--message--><div style=\"color: rgb(32, 33, 34); font-family: Verdana; font-size: 12pt;\">".strip_tags($emailMessage,"<a><li><ol><ul><small><p><hr><b><i><sup><sub><em><strong><u><br>");
     print "</div></div>\n";
 
     //Set to "TESTING" to send to yourself, or "SEND" to send to the users
@@ -172,4 +171,5 @@ foreach ($logs as $value) {
 }
 print "</pre>";
 print $messageHTML[1];
+print "</body></html>";
 ?>
