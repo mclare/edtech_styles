@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sakai Gradebook Export</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        textarea {
+            width: 100%;
+            height: 150px;
+            margin-bottom: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            background-color: #f0f0f0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Sakai Gradebook Export</h1>
+<p>Paste a list of Site IDs below (one per line) to export the gradebook:</p>
+<textarea id="siteIds" placeholder="Enter Site IDs here..."></textarea>
+<label>
+    <input type="checkbox" id="useUsername"> Use displayIds instead of User IDs (may be slower)
+</label>
+<button onclick="startExport()">Start</button>
+<pre id="output"></pre>
+
+<script>
+const userCache = {};
+
+async function fetchGradebookData(siteId) {
+    const url = `/direct/gradebook/batch.json?siteIds=${siteId}`;
+    console.log(`Fetching data from: ${url}`);
+    try {
+        const response = await fetch(url, { credentials: 'include' });
+        console.log(`Response status for ${siteId}: ${response.status}`);
+        const text = await response.text();
+        console.log(`Raw response for ${siteId}:`, text);
+
+        if (!response.ok) {
+            console.error(`Error fetching site ${siteId}: ${response.statusText}`);
+            return null;
+        }
+
+        const data = JSON.parse(text);
+        console.log(`Parsed JSON data for ${siteId}:`, data);
+        return data;
+    } catch (error) {
+        console.error(`Fetch failed for ${siteId}:`, error);
+        return null;
+    }
+}
+
+async function fetchUsername(userId) {
+    if (userCache[userId]) {
+        return userCache[userId];
+    }
+    const url = `/direct/user/${userId}.json`;
+    try {
+        const response = await fetch(url, { credentials: 'include' });
+        if (!response.ok) {
+            console.error(`Error fetching user ${userId}: ${response.statusText}`);
+            return userId;
+        }
+        const data = await response.json();
+        userCache[userId] = data.displayId;
+        return data.displayId;
+    } catch (error) {
+        console.error(`Fetch failed for user ${userId}:`, error);
+        return userId;
+    }
+}
+
+async function convertToCSV(data) {
+    if (!data || !data.gradebook_collection || !Array.isArray(data.gradebook_collection) || data.gradebook_collection.length === 0) {
+        console.warn("No valid data for CSV conversion.");
+        return '';
+    }
+    
+    const siteData = data.gradebook_collection[0];
+    const categories = Object.fromEntries(siteData.categories.map(cat => [cat.id, cat.name]));
+    const headers = ["User ID", "Grade Item", "Category", "Grade", "Max Points", "Date Graded"];
+    const rows = [];
+    const useUsername = document.getElementById('useUsername').checked;
+
+    for (const item of siteData.gradeItems) {
+        for (const grade of item.grades) {
+            const userId = useUsername ? await fetchUsername(grade.userId) : grade.userId;
+            rows.push([
+                userId,
+                item.name,
+                categories[item.categoryId] || "Uncategorized",
+                grade.grade,
+                item.points,
+                new Date(grade.dateGraded).toISOString()
+            ].join(','));
+        }
+    }
+    return [headers.join(','), ...rows].join('\n');
+}
+
+function downloadCSV(siteId, csvContent) {
+    if (!csvContent) {
+        console.warn(`Skipping empty CSV for ${siteId}`);
+        return;
+    }
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${siteId}_gradebook.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+}
+
+async function startExport() {
+    const siteIds = document.getElementById('siteIds').value.trim().split('\n').map(id => id.trim()).filter(id => id);
+    const output = document.getElementById('output');
+    output.textContent = 'Processing...';
+    console.log("Starting export for Site IDs:", siteIds);
+
+    for (const siteId of siteIds) {
+        output.textContent += `\nProcessing: ${siteId}`;
+        const jsonData = await fetchGradebookData(siteId);
+        if (jsonData) {
+            const csvData = await convertToCSV(jsonData);
+            if (csvData) {
+                downloadCSV(siteId, csvData);
+                output.textContent += `\nExported: ${siteId}`;
+            } else {
+                output.textContent += `\nNo valid data for: ${siteId}`;
+                console.warn(`No valid data for site ${siteId}`);
+            }
+        } else {
+            output.textContent += `\nFailed: ${siteId}`;
+        }
+    }
+    console.log("Export process completed.");
+}
+</script>
+
+</body>
+</html>
