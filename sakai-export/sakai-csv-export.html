@@ -32,19 +32,24 @@
 <body>
 
 <h1>Sakai Gradebook Export</h1>
-<p>Paste a list of Site IDs below (one per line) to export the gradebook from sites you have access to:</p>
+<p>Paste a list of Site IDs below (one per line) to export the gradebook:</p>
 <textarea id="siteIds" placeholder="Enter Site IDs here..."></textarea>
+<label>
+    <input type="checkbox" id="useUsername"> Use displayIds instead of User IDs (may be slower)
+</label>
 <button onclick="startExport()">Start</button>
 <pre id="output"></pre>
 
 <script>
+const userCache = {};
+
 async function fetchGradebookData(siteId) {
     const url = `/direct/gradebook/batch.json?siteIds=${siteId}`;
     console.log(`Fetching data from: ${url}`);
     try {
         const response = await fetch(url, { credentials: 'include' });
         console.log(`Response status for ${siteId}: ${response.status}`);
-        const text = await response.text();  // Read response as text for debugging
+        const text = await response.text();
         console.log(`Raw response for ${siteId}:`, text);
 
         if (!response.ok) {
@@ -61,29 +66,51 @@ async function fetchGradebookData(siteId) {
     }
 }
 
-function convertToCSV(data) {
+async function fetchUsername(userId) {
+    if (userCache[userId]) {
+        return userCache[userId];
+    }
+    const url = `/direct/user/${userId}.json`;
+    try {
+        const response = await fetch(url, { credentials: 'include' });
+        if (!response.ok) {
+            console.error(`Error fetching user ${userId}: ${response.statusText}`);
+            return userId;
+        }
+        const data = await response.json();
+        userCache[userId] = data.displayId;
+        return data.displayId;
+    } catch (error) {
+        console.error(`Fetch failed for user ${userId}:`, error);
+        return userId;
+    }
+}
+
+async function convertToCSV(data) {
     if (!data || !data.gradebook_collection || !Array.isArray(data.gradebook_collection) || data.gradebook_collection.length === 0) {
         console.warn("No valid data for CSV conversion.");
         return '';
     }
-
+    
     const siteData = data.gradebook_collection[0];
     const categories = Object.fromEntries(siteData.categories.map(cat => [cat.id, cat.name]));
     const headers = ["User ID", "Grade Item", "Category", "Grade", "Max Points", "Date Graded"];
     const rows = [];
+    const useUsername = document.getElementById('useUsername').checked;
 
-    siteData.gradeItems.forEach(item => {
-        item.grades.forEach(grade => {
+    for (const item of siteData.gradeItems) {
+        for (const grade of item.grades) {
+            const userId = useUsername ? await fetchUsername(grade.userId) : grade.userId;
             rows.push([
-                grade.userId,
+                userId,
                 item.name,
                 categories[item.categoryId] || "Uncategorized",
                 grade.grade,
                 item.points,
                 new Date(grade.dateGraded).toISOString()
             ].join(','));
-        });
-    });
+        }
+    }
     return [headers.join(','), ...rows].join('\n');
 }
 
@@ -108,10 +135,11 @@ async function startExport() {
     console.log("Starting export for Site IDs:", siteIds);
 
     for (const siteId of siteIds) {
-        output.textContent += `\nProcessing: ${siteId}`;
+        const site = await fetchSiteDetails(siteId);
+        output.textContent += `\nProcessing: ${siteId} - ${site.title}`;
         const jsonData = await fetchGradebookData(siteId);
         if (jsonData) {
-            const csvData = convertToCSV(jsonData);
+            const csvData = await convertToCSV(jsonData);
             if (csvData) {
                 downloadCSV(siteId, csvData);
                 output.textContent += `\nExported: ${siteId}`;
@@ -125,6 +153,54 @@ async function startExport() {
     }
     console.log("Export process completed.");
 }
+
+const siteCache = new Map();
+
+async function fetchSiteDetails(siteId) {
+    // Return cached result if available
+    if (siteCache.has(siteId)) {
+        return siteCache.get(siteId);
+    }
+
+    const url = `/direct/site/${siteId}.json`;
+
+    try {
+        const response = await fetch(url, { credentials: 'include' });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch site details: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        
+        // Extract necessary properties
+        const siteDetails = {
+            id: data.id,
+            title: data.title,
+            type: data.type,
+            shortDescription: data.shortDescription || '',
+            createdDate: data.createdDate,
+            lastModified: data.lastModified,
+            siteOwner: data.siteOwner ? {
+                userDisplayName: data.siteOwner.userDisplayName,
+                userEntityURL: data.siteOwner.userEntityURL,
+                userId: data.siteOwner.userId
+            } : null
+        };
+
+        // Cache result
+        siteCache.set(siteId, siteDetails);
+
+        return siteDetails;
+    } catch (error) {
+        console.error(`Error fetching site details for ${siteId}:`, error);
+        return null;
+    }
+}
+
+function formatUnixTimestamp(timestamp) {
+    return timestamp ? new Date(timestamp).toLocaleString() : 'N/A';
+}
+
 </script>
 
 </body>
