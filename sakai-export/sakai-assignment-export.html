@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sakai Assignment Export</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        textarea {
+            width: 100%;
+            height: 150px;
+            margin-bottom: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            background-color: #f0f0f0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .loading {
+            font-style: italic;
+            color: gray;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Sakai Assignment Export</h1>
+<p>Paste a list of Site IDs below (one per line) to fetch assignment details:</p>
+
+<textarea id="siteIds" placeholder="Enter Site IDs here..."></textarea>
+<button onclick="startExport()">Start</button>
+<h2>Output</h2>
+<pre id="output"></pre>
+<h2>Downloads</h2>
+<div id="downloads"></div>
+
+<script>
+async function fetchAssignments(siteId) {
+    const url = `/direct/assignment/site/${siteId}.json`;
+    console.log(`Fetching assignments from: ${url}`);
+
+    try {
+        const response = await fetch(url, { credentials: 'include' });
+        if (!response.ok) {
+            console.error(`Error fetching site ${siteId}: ${response.statusText}`);
+            return { siteId, error: response.statusText };
+        }
+
+        const data = await response.json();
+        console.log(`Assignments for ${siteId}:`, data);
+        return { siteId, assignments: data.assignment_collection || [] };
+    } catch (error) {
+        console.error(`Fetch failed for ${siteId}:`, error);
+        return { siteId, error: error.message };
+    }
+}
+
+async function startExport() {
+    const siteIds = document.getElementById('siteIds').value.trim().split('\n').map(id => id.trim()).filter(id => id);
+    const output = document.getElementById('output');
+    const downloads = document.getElementById('downloads');
+    output.textContent = 'Processing...\n';
+    console.log("Starting assignment fetch for Site IDs:", siteIds);
+
+    for (const siteId of siteIds) {
+        const site = await fetchSiteDetails(siteId);
+        output.textContent += `Fetching assignments for: ${siteId}...\n`;
+        downloads.innerHTML += `<h3>Assignments for ${siteId} - ${site.title}</h3>`;
+        downloads.innerHTML += `<p>Instructor/Creator: ${site.siteOwner.userDisplayName} - Created: `+formatUnixTimestamp(site.createdDate)+` - Modified: `+formatUnixTimestamp(site.lastModified)+`</p>`;
+        downloads.innerHTML += `<p><small> ${site.shortDescription}</small></p>`;
+
+        const result = await fetchAssignments(siteId);
+        if (result.error) {
+            output.textContent += `❌ Failed: ${result.error}\n`;
+        } else if (result.assignments.length === 0) {
+            output.textContent += `⚠️ No assignments found for ${siteId}\n`;
+        } else {
+            output.textContent += `✅ Found ${result.assignments.length} assignments for ${siteId}:\n`;
+            result.assignments.forEach(a => {
+                output.textContent += `   - ${a.title} (ID: ${a.id})\n`;
+                downloads.innerHTML += `<p><button onclick="downloadAssignmentZip('${siteId}', '${a.id}')">Download ${siteId}'s ${a.title}</button></p>`;
+            });
+        }
+        output.textContent += '\n';
+    }
+
+    console.log("Assignment fetch complete.");
+}
+
+async function downloadAssignmentZip(siteId, assignmentId) {
+    // Base URL
+    const baseUrl = `/access/assignment/a/${siteId}/${assignmentId}`;
+    console.log(`Downloading ZIP for ${siteId} / ${assignmentId} from: ${baseUrl}`);
+
+
+    console.log("Looking up site details...");
+    console.log(fetchSiteDetails(siteId));
+
+
+    // Query parameters
+    const params = new URLSearchParams({
+        studentSubmissionText: 'true',
+        studentSubmissionAttachment: 'true',
+        gradeFile: 'true',
+        gradeFileFormat: 'csv', // or 'excel'
+        feedbackTexts: 'true',
+        feedbackComments: 'true',
+        feedbackAttachments: 'true',
+        includeNotSubmitted: 'true',
+        contextString: siteId,
+        viewString: 'all',
+        searchString: '',
+        searchFilterOnly: 'false'
+    });
+
+    // Construct full URL
+    const downloadUrl = `${baseUrl}?${params.toString()}`;
+
+    // Create and click a hidden link to trigger the download
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = `${siteId}_assignment_${assignmentId}.zip`; // This helps with file naming?
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+}
+
+
+const siteCache = new Map();
+
+async function fetchSiteDetails(siteId) {
+    // Return cached result if available
+    if (siteCache.has(siteId)) {
+        return siteCache.get(siteId);
+    }
+
+    const url = `/direct/site/${siteId}.json`;
+
+    try {
+        const response = await fetch(url, { credentials: 'include' });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch site details: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        
+        // Extract necessary properties
+        const siteDetails = {
+            id: data.id,
+            title: data.title,
+            type: data.type,
+            shortDescription: data.shortDescription || '',
+            createdDate: data.createdDate,
+            lastModified: data.lastModified,
+            siteOwner: data.siteOwner ? {
+                userDisplayName: data.siteOwner.userDisplayName,
+                userEntityURL: data.siteOwner.userEntityURL,
+                userId: data.siteOwner.userId
+            } : null
+        };
+
+        // Cache result
+        siteCache.set(siteId, siteDetails);
+
+        return siteDetails;
+    } catch (error) {
+        console.error(`Error fetching site details for ${siteId}:`, error);
+        return null;
+    }
+}
+
+function formatUnixTimestamp(timestamp) {
+    return timestamp ? new Date(timestamp).toLocaleString() : 'N/A';
+}
+
+
+</script>
+
+</body>
+</html>
