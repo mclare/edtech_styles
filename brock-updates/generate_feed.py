@@ -17,7 +17,17 @@ import urllib.request
 import feedparser
 from datetime import datetime, timezone, timedelta
 from dateutil import parser
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+try:
+    # Native in Python 3.9+
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+except ImportError:
+    try:
+        # Backport for Python 3.7 / 3.8 / 3.6
+        from backports.zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    except ImportError:
+        # Extreme fallback if compilation fails or package isn't recognized
+        print("CRITICAL: backports.zoneinfo package missing. Please run: pip install backports.zoneinfo", file=sys.stderr)
+        sys.exit(1)
 
 def detect_local_timezone():
     """
