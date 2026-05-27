@@ -361,7 +361,7 @@ def main():
     <title>Brock News &amp; Events</title>
      <style>
         /* Base styles */
-        body {{ font-family: 'Lato', sans-serif; padding: 10px; margin: 0; color: #202122; }}
+        body {{ font-family: 'Lato', sans-serif; padding: 0 10px 0 10px; margin: 0; color: #202122; }}
         h3 {{ margin-bottom: 0.5em; font-size: 1rem; }}
         h3 a {{ text-decoration: none; color: #cc0000; }}
         ul {{ list-style: none; margin: 0; padding: 0; }}
