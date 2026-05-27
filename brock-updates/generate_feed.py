@@ -367,7 +367,7 @@ def main():
         ul {{ list-style: none; margin: 0; padding: 0; }}
         
         /* Layout for items */
-        .rss-item {{ display: flex; align-items: flex-start; margin-bottom: 1em; padding-bottom: 1em; }}
+        .rss-item {{ display: flex; align-items: flex-start; margin-bottom: 0.5em; padding-bottom: 0.5em; }}
         .rss-item:last-child {{ border-bottom: none; }}
         
         /* Image styling - matches Brightspace rounded cards */
@@ -376,7 +376,7 @@ def main():
         .image-link:hover .rss-image {{ opacity: 0.85; }}
         
         /* Content styling */
-        .rss-content {{ flex-grow: 1; font-size: 0.9rem; line-height: 1.3; border-bottom: 1px solid #e3e9f1; padding-bottom: 1em; }}
+        .rss-content {{ flex-grow: 1; font-size: 0.9rem; line-height: 1.3; border-bottom: 1px solid #e3e9f1; padding-bottom: 0.5em; }}
         .rss-item:last-child .rss-content {{ border-bottom: none; padding-bottom: 0; }}
         .rss-content a {{ font-weight: bold; text-decoration: none; color: #006fbf; }}
         .rss-content a:hover {{ text-decoration: underline; color: #004489; }}
