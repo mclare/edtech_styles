@@ -124,10 +124,9 @@ def sanitize_url(url):
 def format_date(dt_obj, include_year=True):
     """Formats dates while robustly stripping leading zeros from days/hours."""
     day = dt_obj.strftime("%d").lstrip("0")
-    hour = dt_obj.strftime("%I").lstrip("0")
     if include_year:
-        return dt_obj.strftime(f"%b {day}, %Y {hour}:%M %p")
-    return dt_obj.strftime(f"%b {day}, {hour}:%M %p")
+        return dt_obj.strftime(f"%b {day}, %Y")
+    return dt_obj.strftime(f"%b {day}")
 
 
 # --- Feed Processors ---
@@ -178,7 +177,7 @@ def process_news(feed_url, max_items, max_chars):
         # 2. Fallback to standard enclosures if present
         if not image_url and "enclosures" in entry:
             for enc in entry.enclosures:
-                if "image" in enc.get("type", "") or enc.get("href", "").lower().endswith(('.jpg', '.jpeg', '.png', '.gif')):
+                if "image" in enc.get("type", "") or enc.get("href", "").lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp','.svg')):
                     image_url = enc.href
                     break
             
