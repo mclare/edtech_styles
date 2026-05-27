@@ -2,10 +2,11 @@
 # Example use 
 # python generate_feed.py --max-events 5 --max-news 2 --output-path ./brock_updates.html
 #
-# Defaults:
+# Other flag defaults:
 # --news-url https://brocku.ca/brock-news/tag/brightspace/feed/
 # --events-url https://experiencebu.brocku.ca/events.rss
 # --max-chars 260
+# --event-offset 900
 ###########################################################################
 
 import os
@@ -143,7 +144,6 @@ def process_news(feed_url, max_items, max_chars):
         return html_output + "<li>Error loading news.</li></ul></div>\n"
 
     # Convert non-standard item-level <image> elements into standard <media:thumbnail> elements.
-    # The [^<]+ expression targets only flat string content URLs, ignoring nested channel-level blocks.
     processed_xml = re.sub(
         r'<image\b[^>]*>([^<]+)</image>', 
         r'<media:thumbnail url="\1" />', 
@@ -171,7 +171,7 @@ def process_news(feed_url, max_items, max_chars):
         # --- AGGRESSIVE IMAGE EXTRACTION ---
         image_url = ""
         
-        # 1. Target the newly normalized media_thumbnail parameter
+        # 1. Target normalized media_thumbnail parameter
         if "media_thumbnail" in entry:
             image_url = entry.media_thumbnail[0].get("url", "")
         
@@ -271,7 +271,7 @@ def process_events(feed_url, max_items, offset_seconds):
             if end_str:
                 end_dt = parser.parse(end_str)
                 if end_dt.tzinfo is None:
-                    end_dt = end_dt.replace(tzinfo=timezone.utc)
+                    end_dt = end_dt.replace(timezone.utc)
                 end_local = end_dt.astimezone(LOCAL_TZ)
                 date_display += f" to {format_date(end_local, include_year=False)}"
                 
@@ -325,7 +325,7 @@ def process_events(feed_url, max_items, offset_seconds):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Aggregates and transforms Brock RSS feeds into an accessible, static HTML widget panel."
+        description="Aggregates and transforms Brock RSS feeds into an accessible, static HTML file."
     )
     
     parser.add_argument('--news-url', type=str, default="https://brocku.ca/brock-news/tag/brightspace/feed/",
@@ -345,18 +345,20 @@ def main():
     
     args = parser.parse_args()
 
-    print(f"Executing feed compiler utilizing contextual time zone mapping: {LOCAL_TZ}")
-
     # Process individual panels using CLI configs
     news_html = process_news(args.news_url, args.max_news, args.max_chars)
     events_html = process_events(args.events_url, args.max_events, args.event_offset)
     
+    # Generate the dynamic generation timestamp string
+    gen_time_str = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S %Z")
+
     # Template composition
     final_html = f'''<!DOCTYPE html>
 <html xml:lang="en-CA" lang="en-CA">
 <head>
+    <meta created="{gen_time_str}">
     <meta charset="UTF-8">
-    <title>Brock News and Events</title>
+    <title>Brock News &amp; Events</title>
      <style>
         /* Base styles */
         body {{ font-family: 'Lato', sans-serif; padding: 10px; margin: 0; color: #202122; }}
@@ -396,13 +398,30 @@ def main():
 </html>
 '''
 
-    # Atomic write to final target mapping output destination path
+    # Cache Optimization Guard: Verify file contents but strip out dynamic meta strings
+    # so we don't trigger cache invalidation purely based on time string increments.
+    if os.path.exists(args.output_path):
+        try:
+            with open(args.output_path, 'r', encoding='utf-8') as current_file:
+                existing_html = current_file.read()
+            
+            # Use regex to strip out the dynamic generation meta tag from both strings
+            clean_existing = re.sub(r'<meta created="[^"]*">', '', existing_html)
+            clean_proposed = re.sub(r'<meta created="[^"]*">', '', final_html)
+            
+            if clean_existing == clean_proposed:
+                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Content unchanged. Skipping file modification to keep upstream caches primed.")
+                return
+        except Exception as e:
+            print(f"Warning: Cache check read mismatch error: {e}", file=sys.stderr)
+
+    # Atomic write pattern executed only if actual RSS data has drifted
     temp_path = args.output_path + ".tmp"
     try:
         with open(temp_path, 'w', encoding='utf-8') as f:
             f.write(final_html)
         os.replace(temp_path, args.output_path)
-        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Static widget updated successfully.")
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Content shifted! Static HTML written successfully.")
     except Exception as e:
         print(f"File writing failure encountered on path target destinations: {e}", file=sys.stderr)
 

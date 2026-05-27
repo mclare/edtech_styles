@@ -1,0 +1,3 @@
+feedparser==6.0.12
+python-dateutil==2.9.0.post0
+backports.zoneinfo; python_version < "3.9"
