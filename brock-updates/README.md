@@ -1,8 +1,8 @@
 # Brock University News & Events Feed Generator
 
-Python replacement for the deprecated dynamic PHP `feed2js` script. This script runs on a scheduled task (cron), aggregates RSS updates from both Brock News and ExperienceBU, sanitizes the payloads, and generates a completely static, accessible HTML widget ready for embedding in Brightspace. Parameters are configured via variables in the script, *not* parameters passed through GET requests.
+Python replacement for the deprecated dynamic PHP `feed2js` script. This script runs on a scheduled task (cron), aggregates RSS updates from both Brock News and ExperienceBU, sanitizes the payloads, and generates a completely static, accessible HTML widget ready for embedding in Brightspace. Parameters are configured when script is run server-side, *not* parameters passed through GET requests.
 
-Conventional RSS feeds parsers don't quite work because Anthology Engage events don't have authors in the RSS feed, so we have to parse the RSS tags to get the information in one or many `<host>` tags. We also omit cancelled events, and a little bit of date logic to make is so that students saw upcoming events only, not events they are currently missing!
+Conventional RSS feeds parsers don't quite work because Anthology/Blackboard Engage events don't have authors in the RSS feed, so we have to parse the RSS tags to get the information in one or many `<host>` tags. We also omit cancelled events, and a little bit of date logic to make is so that students saw upcoming events only, not events they are currently missing!
 
 The two feeds it makes use of are
 1. A custom RSS feed from the Brock News https://brocku.ca/brock-news/tag/brightspace/feed/

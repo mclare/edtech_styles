@@ -384,6 +384,9 @@ def main():
         
         /* Fallback image */
         .empty-image {{ background-color: #CC0000; background-image: url('https://brightspace.brocku.ca/d2l/lp/navbars/6606/theme/viewimage/1179993/view'); background-size: cover; background-position: center; }}
+ 
+        /* Floating / Sticky Footer Bar for "More Events" */
+        .more-events-sticky {{position: fixed; bottom: 0;left: 0;right: 0;background: linear-gradient(to top, rgba(255,255,255,1) 75%, rgba(255,255,255,0) 100%);padding: 20px 10px 10px 10px; z-index: 1000;}}
     </style>
 </head>
 <body>
@@ -392,7 +395,9 @@ def main():
     
     <h3><a href="https://experiencebu.brocku.ca/events" target="_blank" rel="noopener">Brock University Upcoming Events</a></h3>
     {events_html}
-    <p><a style="color: #006fbf; text-decoration: none; font-size: 0.9rem;" href="https://experiencebu.brocku.ca/events" target="_blank" rel="noopener"><strong>More Events &raquo;</strong></a></p>
+    <div class="more-events-sticky">
+        <a style="color: #006fbf; text-decoration: none;" href="https://experiencebu.brocku.ca/events" target="_blank" rel="noopener"><strong>More Events &raquo;</strong></a>
+    </div>
 </body>
 </html>
 '''
