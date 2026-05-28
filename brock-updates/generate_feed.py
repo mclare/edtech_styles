@@ -265,15 +265,15 @@ def process_events(feed_url, max_items, offset_seconds):
                 continue
                 
             start_local = start_dt.astimezone(LOCAL_TZ)
-            date_display = format_date(start_local, include_year=False)
+            date_display = format_date(start_local, include_year=False) + " " + start_local.strftime("%-I:%M %p")
             
             if end_str:
                 end_dt = parser.parse(end_str)
                 if end_dt.tzinfo is None:
                     end_dt = end_dt.replace(timezone.utc)
                 end_local = end_dt.astimezone(LOCAL_TZ)
-                date_display += f" to {format_date(end_local, include_year=False)}"
-                
+                date_display += f" to {format_date(end_local, include_year=False)}"  + " " + end_local.strftime("%-I:%M %p")
+
         except Exception as e:
             print(f"Error parsing date for {entry.get('title')}: {e}", file=sys.stderr)
             date_display = sanitize_text(start_str)
