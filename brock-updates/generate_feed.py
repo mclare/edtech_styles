@@ -401,8 +401,6 @@ def main():
                         help="Target RSS feed endpoint for Brock Badgers sports news.")
     parser.add_argument('--events-url', type=str, default="https://experiencebu.brocku.ca/events.rss",
                         help="Target RSS feed endpoint for ExperienceBU events.")
-    parser.add_argument('--sports-url', type=str, default="https://gobadgers.ca/rss?path=general",
-                        help="Target RSS feed endpoint for Brock Badgers sports news.")
     parser.add_argument('--output-path', type=str, default="./brock_updates.html",
                         help="Destination write path for the generated static HTML structure.")
     parser.add_argument('--event-offset', type=int, default=900,
