@@ -4,6 +4,7 @@
 #
 # Other flag defaults:
 # --news-url https://brocku.ca/brock-news/tag/brightspace/feed/
+# --sports-url https://gobadgers.ca/rss?path=general
 # --events-url https://experiencebu.brocku.ca/events.rss
 # --sports-url https://gobadgers.ca/rss?path=general
 # --max-chars 260
@@ -396,6 +397,8 @@ def main():
     
     parser.add_argument('--news-url', type=str, default="https://brocku.ca/brock-news/tag/brightspace/feed/",
                         help="Target RSS feed endpoint for Brock News.")
+    parser.add_argument('--sports-url', type=str, default="https://gobadgers.ca/rss?path=general",
+                        help="Target RSS feed endpoint for Brock Badgers sports news.")
     parser.add_argument('--events-url', type=str, default="https://experiencebu.brocku.ca/events.rss",
                         help="Target RSS feed endpoint for ExperienceBU events.")
     parser.add_argument('--sports-url', type=str, default="https://gobadgers.ca/rss?path=general",
