@@ -1,0 +1,27 @@
+# Python virtual environments
+.venv/
+venv/
+# Tests cache
+tests/__pycache__/
+sample_data/
+
+# macOS Finder junk
+.DS_Store
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDEs
+.idea
+.vscode
+
+# Python bytecode
+__pycache__/
+*/__pycache__/
+*.pyc

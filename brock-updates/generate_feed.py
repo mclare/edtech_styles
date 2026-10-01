@@ -1,10 +1,11 @@
 ###########################################################################
 # Example use 
-# python generate_feed.py --max-events 5 --max-news 2 --output-path ./brock_updates.html
+# python generate_feed.py --max-events 5 --max-news 2 --max-sports 1 --output-path ./brock_updates.html
 #
 # Other flag defaults:
 # --news-url https://brocku.ca/brock-news/tag/brightspace/feed/
 # --events-url https://experiencebu.brocku.ca/events.rss
+# --sports-url https://gobadgers.ca/rss?path=general
 # --max-chars 260
 # --event-offset 900
 ###########################################################################
@@ -140,7 +141,7 @@ def process_news(feed_url, max_items, max_chars):
             raw_xml = response.read().decode('utf-8')
     except Exception as e:
         print(f"Error fetching news: {e}", file=sys.stderr)
-        return html_output + "<li>Error loading news.</li></ul></div>\n"
+        return None
 
     # Convert non-standard item-level <image> elements into standard <media:thumbnail> elements.
     processed_xml = re.sub(
@@ -218,6 +219,72 @@ def process_news(feed_url, max_items, max_chars):
     html_output += '</ul></div>\n'
     return html_output
 
+def process_sports(feed_url, max_items, max_chars):
+    html_output = '<div class="rss-box-brocksports"><ul class="rss-items">\n'
+
+    try:
+        req = urllib.request.Request(feed_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req) as response:
+            raw_xml = response.read().decode('utf-8')
+    except Exception as e:
+        print(f"Error fetching sports news: {e}", file=sys.stderr)
+        return None
+
+    feed = feedparser.parse(raw_xml)
+
+    count = 0
+    for entry in feed.entries:
+        if count >= max_items:
+            break
+
+        title = sanitize_text(entry.get("title", "Untitled"))
+        link = sanitize_url(entry.get("link", "#"))
+
+        pub_date_str = ""
+        if "published_parsed" in entry and entry.published_parsed:
+            dt = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
+            pub_date_str = format_date(dt.astimezone(LOCAL_TZ), include_year=True)
+
+        summary_clean = extract_first_paragraph_or_truncate(entry, max_chars)
+
+        image_url = ""
+        if entry.get("media_thumbnail"):
+            image_url = entry.media_thumbnail[0].get("url", "")
+
+        if not image_url:
+            for enclosure in entry.get("enclosures", []):
+                if "image" in enclosure.get("type", ""):
+                    image_url = enclosure.get("href", "")
+                    break
+
+        if not image_url:
+            content_block = entry.get("summary", "")
+            img_match = re.search(r'<img[^>]+src=["\'](.*?)["\']', content_block, re.IGNORECASE)
+            if img_match:
+                image_url = img_match.group(1)
+
+        safe_img_url = sanitize_url(image_url)
+        if safe_img_url != "#":
+            img_div = f'<div class="rss-image" style="background-image: url(\'{safe_img_url}\');"></div>'
+        else:
+            img_div = '<div class="rss-image empty-image"></div>'
+
+        img_link = f'<a href="{link}" target="_blank" rel="noopener" tabindex="-1" aria-hidden="true" class="image-link">{img_div}</a>'
+        html_output += f'''
+        <li class="rss-item">
+            {img_link}
+            <div class="rss-content">
+                <a href="{link}" target="_blank" rel="noopener">{title}</a><br>
+                <span class="rss-date">{pub_date_str}</span><br>
+                {summary_clean}
+            </div>
+        </li>
+        '''
+        count += 1
+
+    html_output += '</ul></div>\n'
+    return html_output
+
 def process_events(feed_url, max_items, offset_seconds):
     html_output = '<div class="rss-box-experiencebu"><ul class="rss-items">\n'
     
@@ -227,7 +294,7 @@ def process_events(feed_url, max_items, offset_seconds):
             raw_xml = response.read().decode('utf-8')
     except Exception as e:
         print(f"Error fetching events: {e}", file=sys.stderr)
-        return html_output + "<li>Error loading events.</li></ul></div>\n"
+        return None
 
     processed_xml = re.sub(
         r'<host\b[^>]*>(.*?)</host>', 
@@ -331,12 +398,16 @@ def main():
                         help="Target RSS feed endpoint for Brock News.")
     parser.add_argument('--events-url', type=str, default="https://experiencebu.brocku.ca/events.rss",
                         help="Target RSS feed endpoint for ExperienceBU events.")
+    parser.add_argument('--sports-url', type=str, default="https://gobadgers.ca/rss?path=general",
+                        help="Target RSS feed endpoint for Brock Badgers sports news.")
     parser.add_argument('--output-path', type=str, default="./brock_updates.html",
                         help="Destination write path for the generated static HTML structure.")
     parser.add_argument('--event-offset', type=int, default=900,
                         help="Future timeline horizon cutoff limit in seconds (skips stale/in-progress events).")
     parser.add_argument('--max-news', type=int, default=2,
                         help="Maximum constraint capping calculated news articles.")
+    parser.add_argument('--max-sports', type=int, default=1,
+                        help="Maximum number of Brock Badgers sports news items.")
     parser.add_argument('--max-events', type=int, default=5,
                         help="Maximum constraint capping processed calendar events.")
     parser.add_argument('--max-chars', type=int, default=260,
@@ -345,8 +416,29 @@ def main():
     args = parser.parse_args()
 
     # Process individual panels using CLI configs
-    news_html = process_news(args.news_url, args.max_news, args.max_chars)
-    events_html = process_events(args.events_url, args.max_events, args.event_offset)
+    news_section = ""
+    if args.max_news > 0:
+        news_html = process_news(args.news_url, args.max_news, args.max_chars)
+        if news_html is not None:
+            news_section = f'''    <h3><a href="https://brocku.ca/brock-news/" target="_blank" rel="noopener">Brock University News</a></h3>
+    {news_html}'''
+
+    sports_section = ""
+    if args.max_sports > 0:
+        sports_html = process_sports(args.sports_url, args.max_sports, args.max_chars)
+        if sports_html is not None:
+            sports_section = f'''    <h3><a href="https://gobadgers.ca/" target="_blank" rel="noopener">Brock Badgers Sports News</a></h3>
+    {sports_html}'''
+
+    events_section = ""
+    if args.max_events > 0:
+        events_html = process_events(args.events_url, args.max_events, args.event_offset)
+        if events_html is not None:
+            events_section = f'''    <h3><a href="https://experiencebu.brocku.ca/events" target="_blank" rel="noopener">Brock University Upcoming Events</a></h3>
+    {events_html}
+    <div class="more-events-sticky">
+        <a style="color: #006fbf; text-decoration: none;" href="https://experiencebu.brocku.ca/events" target="_blank" rel="noopener"><strong>More Events &raquo;</strong></a>
+    </div>'''
     
     # Generate the dynamic generation timestamp string
     gen_time_str = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S %Z")
@@ -390,14 +482,9 @@ def main():
     </style>
 </head>
 <body>
-    <h3><a href="https://brocku.ca/brock-news/" target="_blank" rel="noopener">Brock University News</a></h3>
-    {news_html}
-    
-    <h3><a href="https://experiencebu.brocku.ca/events" target="_blank" rel="noopener">Brock University Upcoming Events</a></h3>
-    {events_html}
-    <div class="more-events-sticky">
-        <a style="color: #006fbf; text-decoration: none;" href="https://experiencebu.brocku.ca/events" target="_blank" rel="noopener"><strong>More Events &raquo;</strong></a>
-    </div>
+{news_section}
+{sports_section}
+{events_section}
 </body>
 </html>
 '''
