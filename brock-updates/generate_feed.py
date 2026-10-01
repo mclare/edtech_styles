@@ -4,6 +4,7 @@
 #
 # Other flag defaults:
 # --news-url https://brocku.ca/brock-news/tag/brightspace/feed/
+# --sports-url https://gobadgers.ca/rss?path=general
 # --events-url https://experiencebu.brocku.ca/events.rss
 # --max-chars 260
 # --event-offset 900
@@ -329,6 +330,8 @@ def main():
     
     parser.add_argument('--news-url', type=str, default="https://brocku.ca/brock-news/tag/brightspace/feed/",
                         help="Target RSS feed endpoint for Brock News.")
+    parser.add_argument('--sports-url', type=str, default="https://gobadgers.ca/rss?path=general",
+                        help="Target RSS feed endpoint for Brock Badgers sports news.")
     parser.add_argument('--events-url', type=str, default="https://experiencebu.brocku.ca/events.rss",
                         help="Target RSS feed endpoint for ExperienceBU events.")
     parser.add_argument('--output-path', type=str, default="./brock_updates.html",
@@ -337,6 +340,8 @@ def main():
                         help="Future timeline horizon cutoff limit in seconds (skips stale/in-progress events).")
     parser.add_argument('--max-news', type=int, default=2,
                         help="Maximum constraint capping calculated news articles.")
+    parser.add_argument('--max-sports', type=int, default=2,
+                        help="Maximum number of sports news articles to include.")
     parser.add_argument('--max-events', type=int, default=5,
                         help="Maximum constraint capping processed calendar events.")
     parser.add_argument('--max-chars', type=int, default=260,
@@ -346,6 +351,7 @@ def main():
 
     # Process individual panels using CLI configs
     news_html = process_news(args.news_url, args.max_news, args.max_chars)
+    sports_html = process_news(args.sports_url, args.max_sports, args.max_chars)
     events_html = process_events(args.events_url, args.max_events, args.event_offset)
     
     # Generate the dynamic generation timestamp string
@@ -393,6 +399,9 @@ def main():
     <h3><a href="https://brocku.ca/brock-news/" target="_blank" rel="noopener">Brock University News</a></h3>
     {news_html}
     
+    <h3><a href="https://gobadgers.ca/" target="_blank" rel="noopener">Brock Badgers Sports News</a></h3>
+    {sports_html}
+
     <h3><a href="https://experiencebu.brocku.ca/events" target="_blank" rel="noopener">Brock University Upcoming Events</a></h3>
     {events_html}
     <div class="more-events-sticky">
