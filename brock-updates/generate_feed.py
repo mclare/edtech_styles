@@ -482,7 +482,8 @@ def main():
                         help="Target RSS feed endpoint for Brock Badgers sports news.")
     parser.add_argument('--events-url', type=str, default="https://experiencebu.brocku.ca/events.rss",
                         help="Target RSS feed endpoint for ExperienceBU events.")
-    parser.add_argument('--microsoft-status', type=str, default="https://status.cloud.microsoft/api/feed/mac",
+    parser.add_argument('--microsoft-status', type=str, nargs='?',
+                        const="https://status.cloud.microsoft/api/feed/mac", default=None,
                         help="Target RSS feed endpoint for Microsoft 365 status.")
     parser.add_argument('--output-path', type=str, default="./brock_updates.html",
                         help="Destination write path for the generated static HTML structure.")
