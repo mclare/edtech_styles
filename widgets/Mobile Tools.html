@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html><head><link rel="stylesheet" href="https://s.brightspace.com/lib/fonts/0.6.1/fonts.css"></head><body style="color: rgb(32, 33, 34); font-family: undefined;"><div data-brock-cal-widget="" style="font-family: Lato, 'Segoe UI', Roboto, sans-serif; color: #202122; line-height: 1.35;">
+<div style="display: flex; flex-wrap: wrap; gap: 0.75rem 1rem; align-items: flex-start;"><!-- Calendar Sync -->
+<div style="flex: 1 1 175px; min-width: 0;">
+<div style="font-weight: bold; font-size: 0.88rem; margin-bottom: 0.15rem;">Sync Your Calendar</div>
+<div style="font-size: 0.78rem; color: #494c4e; margin-bottom: 0.5rem;">Important dates on your device.</div>
+<div data-cal-status="" role="status" aria-live="polite" style="font-size: 0.78rem; color: #565a5c; line-height: 40px;">Loading link...</div>
+<div data-cal-actions="" style="display: none;"><a data-webcal-btn="" href="#" style="display: inline-flex; align-items: center; height: 40px; box-sizing: border-box; background-color: #cc0000; color: #ffffff; text-decoration: none; padding: 0 0.85rem; border-radius: 5px; font-weight: bold; font-size: 0.82rem;" title="You can also subscribe to calendars by copying the URL in the Calendar's Widget's ∨ Subscribe option into your device's calendar app"> Subscribe to Calendar </a></div>
+</div>
+<!-- Pulse App -->
+<div style="flex: 1 1 265px; min-width: 0;">
+<div style="font-weight: bold; font-size: 0.88rem; margin-bottom: 0.15rem;">Brightspace Pulse App</div>
+<div style="font-size: 0.78rem; color: #494c4e; margin-bottom: 1.55rem;">Mobile alerts for grades &amp; updates.</div>
+<div style="display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center;"><a href="https://itunes.apple.com/us/app/brightspace-pulse/id1001688546?ls=1&amp;mt=8" target="_blank" rel="noopener noreferrer" style="display: inline-block; line-height: 0;"> <img src="/d2l/img/0/Notifications.PulseApp.AppStore.svg" alt="Download Brightspace Pulse on the App Store" style="height: 40px; width: auto; display: block;"> </a> <a href="https://play.google.com/store/apps/details?id=com.d2l.brightspace.student.android" target="_blank" rel="noopener noreferrer" style="display: inline-block; line-height: 0;"> <img src="/d2l/img/0/Notifications.PulseApp.PlayStore.png" alt="Get Brightspace Pulse on Google Play" style="height: 40px; width: auto; display: block;"> </a></div>
+</div>
+</div>
+</div>
+<p><script>
+(function() {
+  const orgUnitId = "{OrgUnitId}";
+  window.__brockCalFeedCache = window.__brockCalFeedCache || {};
+
+  function getWebcalUrl() {
+    if (!window.__brockCalFeedCache[orgUnitId]) {
+      window.__brockCalFeedCache[orgUnitId] = fetch(
+        `/d2l/le/calendar/${orgUnitId}/subscribe/subscribeDialogLaunch?subscriptionOptionId=-1`,
+        { credentials: "same-origin" }
+      )
+        .then((res) => {
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          return res.text();
+        })
+        .then((html) => {
+          const doc = new DOMParser().parseFromString(html, "text/html");
+          const urlNode = doc.querySelector(".subscribe-feed-url-partial-container .d2l-textblock-strong");
+          if (!urlNode) throw new Error("Feed URL not found");
+          return urlNode.textContent.trim().replace(/^https?:\/\//i, "webcal://");
+        });
+    }
+    return window.__brockCalFeedCache[orgUnitId];
+  }
+
+  document.querySelectorAll("[data-brock-cal-widget]:not([data-initialized])").forEach((widget) => {
+    widget.dataset.initialized = "true";
+    const statusEl = widget.querySelector("[data-cal-status]");
+    const actionsEl = widget.querySelector("[data-cal-actions]");
+    const webcalBtn = widget.querySelector("[data-webcal-btn]");
+
+    getWebcalUrl()
+      .then((webcalUrl) => {
+        webcalBtn.href = webcalUrl;
+        statusEl.style.display = "none";
+        actionsEl.style.display = "block";
+      })
+      .catch(() => {
+        statusEl.style.lineHeight = "1.35";
+        statusEl.innerHTML = `Unavailable. <a href="/d2l/le/calendar/${orgUnitId}">Open Calendar</a>`;
+      });
+  });
+})();
+</script></p></body></html>
