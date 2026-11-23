@@ -17,6 +17,7 @@ import os
 import re
 import html
 import sys
+import tempfile
 import argparse
 import urllib.request
 import feedparser
@@ -24,6 +25,7 @@ import xml.etree.ElementTree as ET
 from urllib.parse import quote
 from datetime import datetime, timezone, timedelta
 from dateutil import parser
+
 try:
     # Native in Python 3.9+
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -32,9 +34,12 @@ except ImportError:
         # Backport for Python 3.7 / 3.8 / 3.6
         from backports.zoneinfo import ZoneInfo, ZoneInfoNotFoundError
     except ImportError:
-        # Extreme fallback if compilation fails or package isn't recognized
         print("CRITICAL: backports.zoneinfo package missing. Please run: pip install backports.zoneinfo", file=sys.stderr)
         sys.exit(1)
+
+USER_AGENT = "Mozilla/5.0"
+FETCH_TIMEOUT_SECONDS = 15
+
 
 def detect_local_timezone():
     """
@@ -42,15 +47,13 @@ def detect_local_timezone():
     Cascades through environment variables, common Linux configurations,
     and falls back to America/Toronto if undetermined.
     """
-    # 1. Check common standard 'TZ' environment variable
     tz_env = os.environ.get('TZ')
     if tz_env:
         try:
             return ZoneInfo(tz_env)
         except ZoneInfoNotFoundError:
             pass
-            
-    # 2. Check Debian/Ubuntu system file
+
     if os.path.exists('/etc/timezone'):
         try:
             with open('/etc/timezone', 'r', encoding='utf-8') as f:
@@ -59,27 +62,52 @@ def detect_local_timezone():
                     return ZoneInfo(tz_name)
         except (ZoneInfoNotFoundError, IOError):
             pass
-            
-    # 3. Check RedHat/CentOS symlink configuration
+
     if os.path.exists('/etc/localtime') and os.path.islink('/etc/localtime'):
         try:
             target = os.readlink('/etc/localtime')
-            # Extracts zone name out of paths like /usr/share/zoneinfo/America/Toronto
             match = re.search(r'zoneinfo/(.+)$', target)
             if match:
                 return ZoneInfo(match.group(1))
         except (ZoneInfoNotFoundError, OSError):
             pass
 
-    # 4. Universal Fallback
     return ZoneInfo("America/Toronto")
 
 
-# Initialize the dynamically detected timezone globally
 LOCAL_TZ = detect_local_timezone()
 
 
 # --- Helper Functions ---
+
+def fetch_url(url, label, timeout=FETCH_TIMEOUT_SECONDS):
+    """Fetches HTTP/HTTPS content with scheme validation and a socket timeout."""
+    if not url or not str(url).strip().lower().startswith(('http://', 'https://')):
+        print(f"Invalid or unsupported URL scheme for {label}: {url}", file=sys.stderr)
+        return None
+
+    try:
+        req = urllib.request.Request(str(url).strip(), headers={'User-Agent': USER_AGENT})
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            return response.read()
+    except Exception as e:
+        print(f"Error fetching {label}: {e}", file=sys.stderr)
+        return None
+
+
+def parse_xml_bytes(raw_xml, label):
+    """Parses XML bytes while blocking DOCTYPE/ENTITY declarations."""
+    if not raw_xml:
+        return None
+    if re.search(rb'<!(?:DOCTYPE|ENTITY)\b', raw_xml, re.IGNORECASE):
+        print(f"Error parsing {label}: disallowed DOCTYPE or ENTITY declaration", file=sys.stderr)
+        return None
+    try:
+        return ET.fromstring(raw_xml)
+    except ET.ParseError as e:
+        print(f"Error parsing {label}: {e}", file=sys.stderr)
+        return None
+
 
 def sanitize_text(text):
     """Unescapes potential double-encoded entities, then strictly escapes for HTML."""
@@ -87,6 +115,7 @@ def sanitize_text(text):
         return ""
     raw_text = html.unescape(str(text))
     return html.escape(raw_text, quote=True)
+
 
 def sanitize_rss_description(description, max_chars=None):
     """Converts an RSS description to escaped text, respects length limits, and preserves block breaks."""
@@ -96,65 +125,100 @@ def sanitize_rss_description(description, max_chars=None):
     text = re.sub(r'<br\b[^>]*>|</(?:div|p|li)\s*>', '\n', text, flags=re.IGNORECASE)
     text = re.sub(r'<[^>]+>', '', text)
     text = html.unescape(text).strip()
-    
-    # Truncate text prior to splitting to preserve accurate character count
+
     if max_chars and len(text) > max_chars:
         text = text[:max_chars] + "..."
-        
+
     return "<br>".join(
         html.escape(line.strip(), quote=True)
         for line in text.splitlines()
         if line.strip()
     )
 
+
 def extract_first_paragraph_or_truncate(entry, max_chars):
     """
-    Looks for structural HTML paragraphs in content fields to preserve a clean first sentence/block.
-    Falls back gracefully to standard character truncation if no formatting is found.
+    Looks for structural HTML paragraphs in content fields to preserve a clean first block.
+    Falls back to stripped plain text, enforcing max_chars in both cases.
     """
     content_block = ""
     if "content" in entry and entry.content:
         content_block = entry.content[0].value
     if not content_block:
         content_block = entry.get("summary", "")
-        
+
     if not content_block:
         return ""
 
-    # Strategy 1: Attempt to match the first HTML paragraph block
     p_match = re.search(r'<p\b[^>]*>(.*?)</p>', content_block, re.IGNORECASE | re.DOTALL)
     if p_match:
-        p_content = p_match.group(1)
-        clean_text = html.unescape(p_content)
-        clean_text = re.sub(r'<.*?>', '', clean_text).strip()
-        if clean_text:
-            return html.escape(clean_text, quote=True)
+        clean_text = re.sub(r'<.*?>', '', html.unescape(p_match.group(1))).strip()
+    else:
+        clean_text = re.sub(r'<.*?>', '', html.unescape(content_block)).strip()
 
-    # Strategy 2: Fallback configuration for plain-text entries or flat structures
-    text = html.unescape(content_block)
-    text = re.sub(r'<.*?>', '', text).strip()
-    if len(text) > max_chars:
-        text = text[:max_chars] + "..."
-    return html.escape(text, quote=True)
+    if not clean_text:
+        return ""
+
+    if max_chars and len(clean_text) > max_chars:
+        clean_text = clean_text[:max_chars] + "..."
+    return html.escape(clean_text, quote=True)
+
 
 def sanitize_url(url):
-    """Ensures the URL is an HTTP/HTTPS link and escapes it for attribute use."""
+    """
+    Ensures the URL uses HTTP/HTTPS, strips control characters, and neutralizes
+    characters that could break out of HTML attributes or CSS url('...') contexts.
+    """
     if not url:
         return "#"
-    url = str(url).strip()
-    if url.lower().startswith(('http://', 'https://')):
-        return html.escape(url, quote=True)
-    return "#"
+    url = re.sub(r'[\x00-\x1f\x7f]', '', str(url)).strip()
+    if not url.lower().startswith(('http://', 'https://')):
+        return "#"
+
+    css_safe = (
+        url.replace('\\', '%5C')
+           .replace("'", '%27')
+           .replace('"', '%22')
+           .replace('(', '%28')
+           .replace(')', '%29')
+    )
+    return html.escape(css_safe, quote=True)
+
 
 def format_date(dt_obj, include_year=True):
-    """Formats dates while robustly stripping leading zeros from days/hours."""
+    """Formats dates while robustly stripping leading zeros from days."""
     day = dt_obj.strftime("%d").lstrip("0")
     if include_year:
         return dt_obj.strftime(f"%b {day}, %Y")
     return dt_obj.strftime(f"%b {day}")
 
 
-# --- Feed Processors ---
+def render_image_link(link, image_url):
+    """Renders the thumbnail link block with fallback styling when no image is present."""
+    safe_img_url = sanitize_url(image_url)
+    if safe_img_url != "#":
+        img_div = f'<div class="rss-image" style="background-image: url(\'{safe_img_url}\');"></div>'
+    else:
+        img_div = '<div class="rss-image empty-image"></div>'
+    return f'<a href="{link}" target="_blank" rel="noopener" tabindex="-1" aria-hidden="true" class="image-link">{img_div}</a>'
+
+
+def render_alert_banner(box_class, heading_url, heading_text, item_url, item_title, description, svg_markup):
+    """Renders a top-level status/degradation banner matching the feed card layout."""
+    description_markup = f"<br>{description}" if description else ""
+    encoded_svg = quote(svg_markup, safe="")
+    return f'''    <div class="{box_class}">
+        <h3><a href="{heading_url}" target="_blank" rel="noopener">{heading_text}</a></h3>
+        <div class="rss-item" style="border: none; padding-bottom: 0;">
+            <a href="{item_url}" target="_blank" rel="noopener" tabindex="-1" aria-hidden="true" class="image-link"><div class="rss-image" style="background-image: url('data:image/svg+xml,{encoded_svg}'); background-size: contain; background-repeat: no-repeat; background-color: #fff;"></div></a>
+            <div class="rss-content">
+                <a href="{item_url}" target="_blank" rel="noopener">{item_title}</a>{description_markup}
+            </div>
+        </div>
+    </div>\n'''
+
+
+# --- Feed Processors --- SVG images for special alerts
 
 SERVICE_ALERT_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="-5 -5 130 118">
 <path d="M53.1 8.5C56.2 3.2 63.8 3.2 66.9 8.5L116.4 93.5C119.5 98.8 115.7 105.5 109.5 105.5H10.5C4.3 105.5 0.5 98.8 3.6 93.5L53.1 8.5Z" fill="none" stroke="#CC0000" stroke-width="8" stroke-linejoin="round"/>
@@ -178,232 +242,120 @@ MICROSOFT_STATUS_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1
 <path d="M157.424 158.344H299.833V300.753H157.424V158.344Z" fill="#FFC20E"/>
 </svg>'''
 
+
 def process_service_alerts(feed_url, max_chars):
-    """Checks the service alerts RSS feed for active items and returns a warning banner for the most recent one."""
-    if not feed_url:
+    """Checks the service alerts RSS feed for active items and returns a warning banner for the first item."""
+    raw_xml = fetch_url(feed_url, "service alerts")
+    root = parse_xml_bytes(raw_xml, "service alerts")
+    if root is None:
         return ""
 
-    try:
-        req = urllib.request.Request(feed_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req) as response:
-            raw_xml = response.read()
-    except Exception as e:
-        print(f"Error fetching service alerts: {e}", file=sys.stderr)
+    items = root.findall(".//item")
+    if not items:
         return ""
 
-    try:
-        items = ET.fromstring(raw_xml).findall(".//item")
-    except ET.ParseError as e:
-        print(f"Error parsing service alerts: {e}", file=sys.stderr)
-        return ""
+    latest_item = items[0]
+    link = sanitize_url(latest_item.findtext("link", ""))
+    if link == "#":
+        link = "https://brightspace.brocku.ca/"
 
-    if items:
-        latest_item = items[0]
-        raw_link = latest_item.findtext("link", "")
-        link = sanitize_url(raw_link)
-        if link == "#":
-            link = "https://brightspace.brocku.ca/"
+    raw_title = latest_item.findtext("title", "").strip()
+    title = sanitize_text(raw_title) if raw_title else "There is currently an issue disrupting services"
+    description = sanitize_rss_description(latest_item.findtext("description", ""), max_chars)
 
-        raw_description = latest_item.findtext("description", "")
-        if not raw_description.strip():
-            raw_description = latest_item.findtext("title", "")
+    return render_alert_banner(
+        box_class="rss-box-service-alerts",
+        heading_url=link,
+        heading_text="Service Degradation",
+        item_url=link,
+        item_title=title,
+        description=description,
+        svg_markup=SERVICE_ALERT_SVG,
+    )
 
-        description = sanitize_rss_description(raw_description, max_chars)
-        description_markup = f"<br>{description}" if description else ""
-        image_url = quote(SERVICE_ALERT_SVG, safe="")
-        return f'''    <div class="rss-box-service-alerts">
-        <h3><a href="{link}" target="_blank" rel="noopener">Service Degradation</a></h3>
-        <div class="rss-item" style="border: none; padding-bottom: 0;">
-            <a href="{link}" target="_blank" rel="noopener" tabindex="-1" aria-hidden="true" class="image-link"><div class="rss-image" style="background-image: url('data:image/svg+xml,{image_url}'); background-size: contain; background-repeat: no-repeat; background-color: #fff;"></div></a>
-            <div class="rss-content">
-                <a href="{link}" target="_blank" rel="noopener">There is currently an issue disrupting services</a>{description_markup}
-            </div>
-        </div>
-    </div>\n'''
-
-    return ""
 
 def process_microsoft_status(feed_url, max_chars):
     """Checks the Microsoft 365 status feed for ServiceDegradation and returns a warning banner if found."""
-    if not feed_url:
+    raw_xml = fetch_url(feed_url, "Microsoft status")
+    root = parse_xml_bytes(raw_xml, "Microsoft status")
+    if root is None:
         return ""
 
-    try:
-        req = urllib.request.Request(feed_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req) as response:
-            raw_xml = response.read()
-    except Exception as e:
-        print(f"Error fetching Microsoft status: {e}", file=sys.stderr)
-        return ""
-
-    try:
-        status_item = next(
-            (
-                item for item in ET.fromstring(raw_xml).findall(".//item")
-                if item.findtext("status") == "ServiceDegradation"
-            ),
-            None,
-        )
-    except ET.ParseError as e:
-        print(f"Error parsing Microsoft status: {e}", file=sys.stderr)
-        return ""
-
-    if status_item is not None:
-        description = sanitize_rss_description(
-            status_item.findtext("description", ""), max_chars
-        )
-        description_markup = f"<br>{description}" if description else ""
-        image_url = quote(MICROSOFT_STATUS_SVG, safe="")
-        return f'''    <div class="rss-box-microsoft">
-        <h3><a href="https://status.cloud.microsoft/" target="_blank" rel="noopener">Microsoft 365 Service Degradation</a></h3>
-        <div class="rss-item" style="border: none; padding-bottom: 0;">
-            <a href="https://status.cloud.microsoft/" target="_blank" rel="noopener" tabindex="-1" aria-hidden="true" class="image-link"><div class="rss-image" style="background-image: url('data:image/svg+xml,{image_url}'); background-size: contain; background-repeat: no-repeat; background-color: #fff;"></div></a>
-            <div class="rss-content">
-                <a href="https://status.cloud.microsoft/" target="_blank" rel="noopener">There is currently an issue disrupting services like Outlook and Teams.</a>{description_markup}
-            </div>
-        </div>
-    </div>\n'''
-
-    return ""
-
-def process_news(feed_url, max_items, max_chars):
-    html_output = '<div class="rss-box-brocknews"><ul class="rss-items">\n'
-    
-    try:
-        req = urllib.request.Request(feed_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req) as response:
-            raw_xml = response.read().decode('utf-8')
-    except Exception as e:
-        print(f"Error fetching news: {e}", file=sys.stderr)
-        return None
-
-    # Convert non-standard item-level <image> elements into standard <media:thumbnail> elements.
-    processed_xml = re.sub(
-        r'<image\b[^>]*>([^<]+)</image>', 
-        r'<media:thumbnail url="\1" />', 
-        raw_xml, 
-        flags=re.IGNORECASE
+    status_item = next(
+        (item for item in root.findall(".//item") if item.findtext("status") == "ServiceDegradation"),
+        None,
     )
-    
-    feed = feedparser.parse(processed_xml)
-    count = 0
-    
-    for entry in feed.entries:
-        if count >= max_items:
-            break
-            
-        title = sanitize_text(entry.get("title", "Untitled"))
-        link = sanitize_url(entry.get("link", "#"))
-        
-        pub_date_str = ""
-        if "published_parsed" in entry and entry.published_parsed:
-            dt = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
-            pub_date_str = format_date(dt.astimezone(LOCAL_TZ), include_year=True)
-        
-        summary_clean = extract_first_paragraph_or_truncate(entry, max_chars)
-            
-        # --- AGGRESSIVE IMAGE EXTRACTION ---
-        image_url = ""
-        
-        # 1. Target normalized media_thumbnail parameter
-        if "media_thumbnail" in entry:
-            image_url = entry.media_thumbnail[0].get("url", "")
-        
-        # 2. Fallback to standard enclosures if present
-        if not image_url and "enclosures" in entry:
-            for enc in entry.enclosures:
-                if "image" in enc.get("type", "") or enc.get("href", "").lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp','.svg')):
-                    image_url = enc.href
-                    break
-            
-        # 3. Fallback to standard media_content maps
-        if not image_url and "media_content" in entry:
-            for media in entry.media_content:
-                if "image" in media.get("medium", "") or "image" in media.get("type", ""):
-                    image_url = media.get("url", "")
-                    break
-                    
-        # 4. Final safety scraper against direct inline body <img> parameters
-        if not image_url:
-            content_block = entry.content[0].value if "content" in entry else entry.get("summary", "")
-            img_match = re.search(r'<img[^>]+src=["\'](.*?)["\']', content_block, re.IGNORECASE)
-            if img_match:
-                image_url = img_match.group(1)
-        
-        safe_img_url = sanitize_url(image_url)
-        if safe_img_url != "#":
-            img_div = f'<div class="rss-image" style="background-image: url(\'{safe_img_url}\');"></div>'
-        else:
-            img_div = '<div class="rss-image empty-image"></div>'
-            
-        img_link = f'<a href="{link}" target="_blank" rel="noopener" tabindex="-1" aria-hidden="true" class="image-link">{img_div}</a>'
+    if status_item is None:
+        return ""
 
-        html_output += f'''
-        <li class="rss-item">
-            {img_link}
-            <div class="rss-content">
-                <a href="{link}" target="_blank" rel="noopener">{title}</a><br>
-                <span class="rss-date">{pub_date_str}</span><br>
-                {summary_clean}
-            </div>
-        </li>
-        '''
-        count += 1
-        
-    html_output += '</ul></div>\n'
-    return html_output
+    description = sanitize_rss_description(status_item.findtext("description", ""), max_chars)
+    ms_url = "https://status.cloud.microsoft/"
 
-def process_sports(feed_url, max_items, max_chars):
-    html_output = '<div class="rss-box-brocksports"><ul class="rss-items">\n'
+    return render_alert_banner(
+        box_class="rss-box-microsoft",
+        heading_url=ms_url,
+        heading_text="Microsoft 365 Service Degradation",
+        item_url=ms_url,
+        item_title="There is currently an issue disrupting services like Outlook and Teams.",
+        description=description,
+        svg_markup=MICROSOFT_STATUS_SVG,
+    )
 
-    try:
-        req = urllib.request.Request(feed_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req) as response:
-            raw_xml = response.read().decode('utf-8')
-    except Exception as e:
-        print(f"Error fetching sports news: {e}", file=sys.stderr)
+
+def extract_entry_image(entry):
+    """Extracts the best available image URL from normalized media fields, enclosures, or inline HTML."""
+    if entry.get("media_thumbnail"):
+        url = entry.media_thumbnail[0].get("url", "")
+        if url:
+            return url
+
+    for enc in entry.get("enclosures", []):
+        href = enc.get("href", "")
+        if "image" in enc.get("type", "") or href.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg')):
+            if href:
+                return href
+
+    for media in entry.get("media_content", []):
+        if "image" in media.get("medium", "") or "image" in media.get("type", ""):
+            url = media.get("url", "")
+            if url:
+                return url
+
+    content_block = entry.content[0].value if entry.get("content") else entry.get("summary", "")
+    img_match = re.search(r'<img[^>]+src=["\'](.*?)["\']', content_block, re.IGNORECASE)
+    return img_match.group(1) if img_match else ""
+
+
+def process_standard_feed(feed_url, max_items, max_chars, box_class, label):
+    """Processes standard RSS feeds (News, Sports) into an HTML list."""
+    raw_bytes = fetch_url(feed_url, label)
+    if raw_bytes is None:
         return None
 
-    feed = feedparser.parse(raw_xml)
+    raw_xml = raw_bytes.decode('utf-8', errors='replace')
+    # Normalize non-standard item-level <image> elements into <media:thumbnail>
+    processed_xml = re.sub(
+        r'<image\b[^>]*>([^<]+)</image>',
+        r'<media:thumbnail url="\1" />',
+        raw_xml,
+        flags=re.IGNORECASE,
+    )
 
-    count = 0
-    for entry in feed.entries:
-        if count >= max_items:
-            break
+    feed = feedparser.parse(processed_xml)
+    html_output = f'<div class="{box_class}"><ul class="rss-items">\n'
 
+    for entry in feed.entries[:max_items]:
         title = sanitize_text(entry.get("title", "Untitled"))
         link = sanitize_url(entry.get("link", "#"))
 
         pub_date_str = ""
-        if "published_parsed" in entry and entry.published_parsed:
+        if entry.get("published_parsed"):
             dt = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
             pub_date_str = format_date(dt.astimezone(LOCAL_TZ), include_year=True)
 
         summary_clean = extract_first_paragraph_or_truncate(entry, max_chars)
+        img_link = render_image_link(link, extract_entry_image(entry))
 
-        image_url = ""
-        if entry.get("media_thumbnail"):
-            image_url = entry.media_thumbnail[0].get("url", "")
-
-        if not image_url:
-            for enclosure in entry.get("enclosures", []):
-                if "image" in enclosure.get("type", ""):
-                    image_url = enclosure.get("href", "")
-                    break
-
-        if not image_url:
-            content_block = entry.get("summary", "")
-            img_match = re.search(r'<img[^>]+src=["\'](.*?)["\']', content_block, re.IGNORECASE)
-            if img_match:
-                image_url = img_match.group(1)
-
-        safe_img_url = sanitize_url(image_url)
-        if safe_img_url != "#":
-            img_div = f'<div class="rss-image" style="background-image: url(\'{safe_img_url}\');"></div>'
-        else:
-            img_div = '<div class="rss-image empty-image"></div>'
-
-        img_link = f'<a href="{link}" target="_blank" rel="noopener" tabindex="-1" aria-hidden="true" class="image-link">{img_div}</a>'
         html_output += f'''
         <li class="rss-item">
             {img_link}
@@ -414,66 +366,61 @@ def process_sports(feed_url, max_items, max_chars):
             </div>
         </li>
         '''
-        count += 1
 
     html_output += '</ul></div>\n'
     return html_output
+
 
 def process_events(feed_url, max_items, offset_seconds):
-    html_output = '<div class="rss-box-experiencebu"><ul class="rss-items">\n'
-    
-    try:
-        req = urllib.request.Request(feed_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req) as response:
-            raw_xml = response.read().decode('utf-8')
-    except Exception as e:
-        print(f"Error fetching events: {e}", file=sys.stderr)
+    """Processes ExperienceBU upcoming confirmed events into an HTML list."""
+    raw_bytes = fetch_url(feed_url, "events")
+    if raw_bytes is None:
         return None
 
+    raw_xml = raw_bytes.decode('utf-8', errors='replace')
     processed_xml = re.sub(
-        r'<host\b[^>]*>(.*?)</host>', 
-        r'<category domain="event_host">\1</category>', 
-        raw_xml, 
-        flags=re.IGNORECASE | re.DOTALL
+        r'<host\b[^>]*>(.*?)</host>',
+        r'<category domain="event_host">\1</category>',
+        raw_xml,
+        flags=re.IGNORECASE | re.DOTALL,
     )
-    
+
     feed = feedparser.parse(processed_xml)
+    html_output = '<div class="rss-box-experiencebu"><ul class="rss-items">\n'
     count = 0
-    now_utc = datetime.now(timezone.utc)
-    threshold_time = now_utc + timedelta(seconds=offset_seconds)
+    threshold_time = datetime.now(timezone.utc) + timedelta(seconds=offset_seconds)
 
     for entry in feed.entries:
         if count >= max_items:
             break
-            
-        # --- STATUS FILTER ---
-        status_str = entry.get("status", "").strip().lower()
-        if status_str != "confirmed":
+
+        if entry.get("status", "").strip().lower() != "confirmed":
             continue
 
         start_str = entry.get("start", entry.get("startdate", ""))
         end_str = entry.get("end", entry.get("enddate", ""))
-        
         if not start_str:
             continue
-            
+
         try:
             start_dt = parser.parse(start_str)
             if start_dt.tzinfo is None:
                 start_dt = start_dt.replace(tzinfo=timezone.utc)
-                
+
             if start_dt < threshold_time:
                 continue
-                
+
             start_local = start_dt.astimezone(LOCAL_TZ)
-            date_display = format_date(start_local, include_year=False) + " " + start_local.strftime("%-I:%M %p")
-            
+            start_time_str = start_local.strftime("%I:%M %p").lstrip("0")
+            date_display = f"{format_date(start_local, include_year=False)} {start_time_str}"
+
             if end_str:
                 end_dt = parser.parse(end_str)
                 if end_dt.tzinfo is None:
-                    end_dt = end_dt.replace(timezone.utc)
+                    end_dt = end_dt.replace(tzinfo=timezone.utc)
                 end_local = end_dt.astimezone(LOCAL_TZ)
-                date_display += f" to {format_date(end_local, include_year=False)}"  + " " + end_local.strftime("%-I:%M %p")
+                end_time_str = end_local.strftime("%I:%M %p").lstrip("0")
+                date_display += f" to {format_date(end_local, include_year=False)} {end_time_str}"
 
         except Exception as e:
             print(f"Error parsing date for {entry.get('title')}: {e}", file=sys.stderr)
@@ -481,30 +428,16 @@ def process_events(feed_url, max_items, offset_seconds):
 
         title = sanitize_text(entry.get("title", "Untitled Event"))
         link = sanitize_url(entry.get("link", "#"))
-        
-        # --- HOST HANDLING ---
-        host_names = []
-        for tag in entry.get("tags", []):
-            if tag.get("scheme") == "event_host":
-                host_names.append(sanitize_text(tag.get("term", "")))
-                
-        host_str = ", ".join(host_names)
-        host_display = f' <div class="rss-item-auth">[{host_str}]</div>' if host_str else ''
-        
-        image_url = ""
-        if "enclosures" in entry:
-            for enc in entry.enclosures:
-                if enc.get("href"):
-                    image_url = enc.href
-                    break
-                    
-        safe_img_url = sanitize_url(image_url)
-        if safe_img_url != "#":
-            img_div = f'<div class="rss-image" style="background-image: url(\'{safe_img_url}\');"></div>'
-        else:
-            img_div = '<div class="rss-image empty-image"></div>'
-            
-        img_link = f'<a href="{link}" target="_blank" rel="noopener" tabindex="-1" aria-hidden="true" class="image-link">{img_div}</a>'
+
+        host_names = [
+            sanitize_text(tag.get("term", ""))
+            for tag in entry.get("tags", [])
+            if tag.get("scheme") == "event_host" and tag.get("term")
+        ]
+        host_display = f' <div class="rss-item-auth">[{", ".join(host_names)}]</div>' if host_names else ''
+
+        image_url = next((enc.get("href", "") for enc in entry.get("enclosures", []) if enc.get("href")), "")
+        img_link = render_image_link(link, image_url)
 
         html_output += f'''
         <li class="rss-item">
@@ -524,36 +457,36 @@ def process_events(feed_url, max_items, offset_seconds):
 # --- Orchestration Engine ---
 
 def main():
-    parser = argparse.ArgumentParser(
+    arg_parser = argparse.ArgumentParser(
         description="Aggregates and transforms Brock RSS feeds into an accessible, static HTML file."
     )
-    
-    parser.add_argument('--news-url', type=str, default="https://brocku.ca/brock-news/tag/brightspace/feed/",
-                        help="Target RSS feed endpoint for Brock News.")
-    parser.add_argument('--sports-url', type=str, default="https://gobadgers.ca/rss?path=",
-                        help="Target RSS feed endpoint for Brock Badgers sports news.")
-    parser.add_argument('--events-url', type=str, default="https://experiencebu.brocku.ca/events.rss",
-                        help="Target RSS feed endpoint for ExperienceBU events.")
-    parser.add_argument('--microsoft-status', type=str, nargs='?',
-                        const="https://status.cloud.microsoft/api/feed/mac", default=None,
-                        help="Target RSS feed endpoint for Microsoft 365 status.")
-    parser.add_argument('--service-alerts', type=str, nargs='?',
-                        const="https://brightspace.brocku.ca/d2l/le/news/rss/249302/course?token=apqljg7nhrr09cs811&ou=249302", default=None,
-                        help="Target RSS feed endpoint for service degradation alerts.")
-    parser.add_argument('--output-path', type=str, default="./brock_updates.html",
-                        help="Destination write path for the generated static HTML structure.")
-    parser.add_argument('--event-offset', type=int, default=900,
-                        help="Future timeline horizon cutoff limit in seconds (skips stale/in-progress events).")
-    parser.add_argument('--max-news', type=int, default=2,
-                        help="Maximum constraint capping calculated news articles.")
-    parser.add_argument('--max-sports', type=int, default=1,
-                        help="Maximum number of Brock Badgers sports news items.")
-    parser.add_argument('--max-events', type=int, default=5,
-                        help="Maximum constraint capping processed calendar events.")
-    parser.add_argument('--max-chars', type=int, default=260,
-                        help="Character bounding limit tracking descriptive string truncations.")
-    
-    args = parser.parse_args()
+
+    arg_parser.add_argument('--news-url', type=str, default="https://brocku.ca/brock-news/tag/brightspace/feed/",
+                            help="Target RSS feed endpoint for Brock News.")
+    arg_parser.add_argument('--sports-url', type=str, default="https://gobadgers.ca/rss?path=",
+                            help="Target RSS feed endpoint for Brock Badgers sports news.")
+    arg_parser.add_argument('--events-url', type=str, default="https://experiencebu.brocku.ca/events.rss",
+                            help="Target RSS feed endpoint for ExperienceBU events.")
+    arg_parser.add_argument('--microsoft-status', type=str, nargs='?',
+                            const="https://status.cloud.microsoft/api/feed/mac", default=None,
+                            help="Target RSS feed endpoint for Microsoft 365 status.")
+    arg_parser.add_argument('--service-alerts', type=str, nargs='?',
+                            const="https://brightspace.brocku.ca/d2l/le/news/rss/249302/course?token=apqljg7nhrr09cs811&ou=249302", default=None,
+                            help="Target RSS feed endpoint for service degradation alerts.")
+    arg_parser.add_argument('--output-path', type=str, default="./brock_updates.html",
+                            help="Destination write path for the generated static HTML structure.")
+    arg_parser.add_argument('--event-offset', type=int, default=900,
+                            help="Future timeline horizon cutoff limit in seconds (skips stale/in-progress events).")
+    arg_parser.add_argument('--max-news', type=int, default=2,
+                            help="Maximum constraint capping calculated news articles.")
+    arg_parser.add_argument('--max-sports', type=int, default=1,
+                            help="Maximum number of Brock Badgers sports news items.")
+    arg_parser.add_argument('--max-events', type=int, default=5,
+                            help="Maximum constraint capping processed calendar events.")
+    arg_parser.add_argument('--max-chars', type=int, default=260,
+                            help="Character bounding limit tracking descriptive string truncations.")
+
+    args = arg_parser.parse_args()
 
     # Process individual panels using CLI configs
     service_alerts_section = process_service_alerts(args.service_alerts, args.max_chars) if args.service_alerts else ""
@@ -561,14 +494,14 @@ def main():
 
     news_section = ""
     if args.max_news > 0:
-        news_html = process_news(args.news_url, args.max_news, args.max_chars)
+        news_html = process_standard_feed(args.news_url, args.max_news, args.max_chars, "rss-box-brocknews", "news")
         if news_html is not None:
             news_section = f'''    <h3><a href="https://brocku.ca/brock-news/" target="_blank" rel="noopener">Brock University News</a></h3>
     {news_html}'''
 
     sports_section = ""
     if args.max_sports > 0:
-        sports_html = process_sports(args.sports_url, args.max_sports, args.max_chars)
+        sports_html = process_standard_feed(args.sports_url, args.max_sports, args.max_chars, "rss-box-brocksports", "sports news")
         if sports_html is not None:
             sports_section = f'''    <h3><a href="https://gobadgers.ca/" target="_blank" rel="noopener">Brock Badgers Sports News</a></h3>
     {sports_html}'''
@@ -582,11 +515,9 @@ def main():
     <div class="more-events-sticky">
         <a style="color: #006fbf; text-decoration: none;" href="https://experiencebu.brocku.ca/events" target="_blank" rel="noopener"><strong>More Events &raquo;</strong></a>
     </div>'''
-    
-    # Generate the dynamic generation timestamp string
+
     gen_time_str = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S %Z")
 
-    # Template composition
     final_html = f'''<!DOCTYPE html>
 <html xml:lang="en-CA" lang="en-CA">
 <head>
@@ -634,32 +565,39 @@ def main():
 </html>
 '''
 
-    # Cache Optimization Guard: Verify file contents but strip out dynamic meta strings
-    # so we don't trigger cache invalidation purely based on time string increments.
+    # Cache Optimization Guard: Strip dynamic meta timestamp before comparing
     if os.path.exists(args.output_path):
         try:
             with open(args.output_path, 'r', encoding='utf-8') as current_file:
                 existing_html = current_file.read()
-            
-            # Use regex to strip out the dynamic generation meta tag from both strings
+
             clean_existing = re.sub(r'<meta created="[^"]*">', '', existing_html)
             clean_proposed = re.sub(r'<meta created="[^"]*">', '', final_html)
-            
+
             if clean_existing == clean_proposed:
                 print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Content unchanged. Skipping file modification to keep upstream caches primed.")
                 return
         except Exception as e:
             print(f"Warning: Cache check read mismatch error: {e}", file=sys.stderr)
 
-    # Atomic write pattern executed only if actual RSS data has drifted
-    temp_path = args.output_path + ".tmp"
+    # Collision-safe atomic write pattern
+    output_dir = os.path.dirname(os.path.abspath(args.output_path))
+    temp_path = None
     try:
-        with open(temp_path, 'w', encoding='utf-8') as f:
-            f.write(final_html)
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=output_dir, prefix='.tmp_brock_', suffix='.html', delete=False) as tmp_file:
+            temp_path = tmp_file.name
+            tmp_file.write(final_html)
+        os.chmod(temp_path, 0o644)
         os.replace(temp_path, args.output_path)
         print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Content shifted! Static HTML written successfully.")
     except Exception as e:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
         print(f"File writing failure encountered on path target destinations: {e}", file=sys.stderr)
+
 
 if __name__ == "__main__":
     main()
