@@ -8,6 +8,7 @@
 #           https://gobadgers.ca/rss?path=general returns too few stories, so we use the more general feed... without general.    
 # --events-url https://experiencebu.brocku.ca/events.rss
 # --microsoft-status https://status.cloud.microsoft/api/feed/mac
+# --service-alerts-path service-alerts.html
 # --max-chars 260
 # --event-offset 900
 ###########################################################################
@@ -155,6 +156,8 @@ def format_date(dt_obj, include_year=True):
 
 # --- Feed Processors ---
 
+LOCAL_ALERT_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#CC0000" d="M12 2L1 21h22L12 2zm1 16h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>'''
+
 MICROSOFT_STATUS_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1406 301">
 <path d="M583.336 240H553.951V124.453C553.951 114.99 554.532 103.411 555.695 89.7144H555.197C553.37 97.5171 551.752 103.12 550.341 106.523L497.05 240H476.63L423.214 107.52C421.72 103.618 420.143 97.6831 418.483 89.7144H417.985C418.649 96.853 418.981 108.516 418.981 124.702V240H391.588V61.4502H433.3L480.24 180.359C483.81 189.49 486.134 196.296 487.213 200.779H487.836C490.907 191.399 493.397 184.426 495.306 179.861L543.119 61.4502H583.336V240Z" fill="#77787B"/>
 <path d="M631.988 85.73C627.256 85.73 623.189 84.1943 619.785 81.123C616.465 78.0518 614.805 74.1504 614.805 69.4189C614.805 64.6875 616.465 60.7446 619.785 57.5903C623.189 54.436 627.256 52.8589 631.988 52.8589C636.885 52.8589 641.035 54.436 644.439 57.5903C647.842 60.7446 649.544 64.6875 649.544 69.4189C649.544 73.9014 647.842 77.7612 644.439 80.9985C641.035 84.1528 636.885 85.73 631.988 85.73ZM646.306 240H617.42V112.5H646.306V240Z" fill="#77787B"/>
@@ -170,6 +173,32 @@ MICROSOFT_STATUS_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1
 <path d="M0 158.344H142.409V300.753H0V158.344Z" fill="#00AEEF"/>
 <path d="M157.424 158.344H299.833V300.753H157.424V158.344Z" fill="#FFC20E"/>
 </svg>'''
+
+def process_local_alerts(filepath):
+    """Checks for a local service-alerts.html file and returns a warning banner if found."""
+    if not os.path.exists(filepath):
+        return ""
+
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            alert_content = f.read().strip()
+    except Exception as e:
+        print(f"Error reading local alert file {filepath}: {e}", file=sys.stderr)
+        return ""
+
+    if not alert_content:
+        return ""
+
+    image_url = quote(LOCAL_ALERT_SVG, safe="")
+    return f'''    <div class="rss-box-local-alert">
+        <h3><span style="color: #cc0000;">Service Degradation</span></h3>
+        <div class="rss-item" style="border: none; padding-bottom: 0;">
+            <div tabindex="-1" aria-hidden="true" class="image-link"><div class="rss-image" style="background-image: url('data:image/svg+xml,{image_url}'); background-size: 35px; background-repeat: no-repeat; background-color: #fff; border-color: #cc0000;"></div></div>
+            <div class="rss-content">
+                {alert_content}
+            </div>
+        </div>
+    </div>\n'''
 
 def process_microsoft_status(feed_url, max_chars):
     """Checks the Microsoft 365 status feed for ServiceDegradation and returns a warning banner if found."""
@@ -485,6 +514,8 @@ def main():
     parser.add_argument('--microsoft-status', type=str, nargs='?',
                         const="https://status.cloud.microsoft/api/feed/mac", default=None,
                         help="Target RSS feed endpoint for Microsoft 365 status.")
+    parser.add_argument('--service-alerts-path', type=str, default="service-alerts.html",
+                        help="Path to a local HTML file containing service alerts to inject at the top.")
     parser.add_argument('--output-path', type=str, default="./brock_updates.html",
                         help="Destination write path for the generated static HTML structure.")
     parser.add_argument('--event-offset', type=int, default=900,
@@ -501,6 +532,7 @@ def main():
     args = parser.parse_args()
 
     # Process individual panels using CLI configs
+    local_alert_section = process_local_alerts(args.service_alerts_path)
     microsoft_section = process_microsoft_status(args.microsoft_status, args.max_chars) if args.microsoft_status else ""
 
     news_section = ""
@@ -569,6 +601,7 @@ def main():
     </style>
 </head>
 <body>
+{local_alert_section}
 {microsoft_section}
 {news_section}
 {sports_section}
