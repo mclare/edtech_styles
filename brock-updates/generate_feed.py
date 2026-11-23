@@ -8,7 +8,7 @@
 #           https://gobadgers.ca/rss?path=general returns too few stories, so we use the more general feed... without general.    
 # --events-url https://experiencebu.brocku.ca/events.rss
 # --microsoft-status https://status.cloud.microsoft/api/feed/mac
-# --service-alerts-path service-alerts.html
+# --service-alerts https://brightspace.brocku.ca/d2l/le/news/rss/249302/course?token=apqljg7nhrr09cs811&ou=249302
 # --max-chars 260
 # --event-offset 900
 ###########################################################################
@@ -156,7 +156,11 @@ def format_date(dt_obj, include_year=True):
 
 # --- Feed Processors ---
 
-LOCAL_ALERT_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#CC0000" d="M12 2L1 21h22L12 2zm1 16h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>'''
+SERVICE_ALERT_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="-5 -5 130 118">
+<path d="M53.1 8.5C56.2 3.2 63.8 3.2 66.9 8.5L116.4 93.5C119.5 98.8 115.7 105.5 109.5 105.5H10.5C4.3 105.5 0.5 98.8 3.6 93.5L53.1 8.5Z" fill="none" stroke="#CC0000" stroke-width="8" stroke-linejoin="round"/>
+<rect x="54" y="36" width="12" height="32" rx="6" fill="#202122"/>
+<circle cx="60" cy="83" r="6.5" fill="#202122"/>
+</svg>'''
 
 MICROSOFT_STATUS_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1406 301">
 <path d="M583.336 240H553.951V124.453C553.951 114.99 554.532 103.411 555.695 89.7144H555.197C553.37 97.5171 551.752 103.12 550.341 106.523L497.05 240H476.63L423.214 107.52C421.72 103.618 420.143 97.6831 418.483 89.7144H417.985C418.649 96.853 418.981 108.516 418.981 124.702V240H391.588V61.4502H433.3L480.24 180.359C483.81 189.49 486.134 196.296 487.213 200.779H487.836C490.907 191.399 493.397 184.426 495.306 179.861L543.119 61.4502H583.336V240Z" fill="#77787B"/>
@@ -174,31 +178,50 @@ MICROSOFT_STATUS_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1
 <path d="M157.424 158.344H299.833V300.753H157.424V158.344Z" fill="#FFC20E"/>
 </svg>'''
 
-def process_local_alerts(filepath):
-    """Checks for a local service-alerts.html file and returns a warning banner if found."""
-    if not os.path.exists(filepath):
+def process_service_alerts(feed_url, max_chars):
+    """Checks the service alerts RSS feed for active items and returns a warning banner for the most recent one."""
+    if not feed_url:
         return ""
 
     try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            alert_content = f.read().strip()
+        req = urllib.request.Request(feed_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req) as response:
+            raw_xml = response.read()
     except Exception as e:
-        print(f"Error reading local alert file {filepath}: {e}", file=sys.stderr)
+        print(f"Error fetching service alerts: {e}", file=sys.stderr)
         return ""
 
-    if not alert_content:
+    try:
+        items = ET.fromstring(raw_xml).findall(".//item")
+    except ET.ParseError as e:
+        print(f"Error parsing service alerts: {e}", file=sys.stderr)
         return ""
 
-    image_url = quote(LOCAL_ALERT_SVG, safe="")
-    return f'''    <div class="rss-box-local-alert">
-        <h3><span style="color: #cc0000;">Service Degradation</span></h3>
+    if items:
+        latest_item = items[0]
+        raw_link = latest_item.findtext("link", "")
+        link = sanitize_url(raw_link)
+        if link == "#":
+            link = "https://brightspace.brocku.ca/"
+
+        raw_description = latest_item.findtext("description", "")
+        if not raw_description.strip():
+            raw_description = latest_item.findtext("title", "")
+
+        description = sanitize_rss_description(raw_description, max_chars)
+        description_markup = f"<br>{description}" if description else ""
+        image_url = quote(SERVICE_ALERT_SVG, safe="")
+        return f'''    <div class="rss-box-service-alerts">
+        <h3><a href="{link}" target="_blank" rel="noopener">Service Degradation</a></h3>
         <div class="rss-item" style="border: none; padding-bottom: 0;">
-            <div tabindex="-1" aria-hidden="true" class="image-link"><div class="rss-image" style="background-image: url('data:image/svg+xml,{image_url}'); background-size: 35px; background-repeat: no-repeat; background-color: #fff; border-color: #cc0000;"></div></div>
+            <a href="{link}" target="_blank" rel="noopener" tabindex="-1" aria-hidden="true" class="image-link"><div class="rss-image" style="background-image: url('data:image/svg+xml,{image_url}'); background-size: contain; background-repeat: no-repeat; background-color: #fff;"></div></a>
             <div class="rss-content">
-                {alert_content}
+                <a href="{link}" target="_blank" rel="noopener">There is currently an issue disrupting services</a>{description_markup}
             </div>
         </div>
     </div>\n'''
+
+    return ""
 
 def process_microsoft_status(feed_url, max_chars):
     """Checks the Microsoft 365 status feed for ServiceDegradation and returns a warning banner if found."""
@@ -514,8 +537,9 @@ def main():
     parser.add_argument('--microsoft-status', type=str, nargs='?',
                         const="https://status.cloud.microsoft/api/feed/mac", default=None,
                         help="Target RSS feed endpoint for Microsoft 365 status.")
-    parser.add_argument('--service-alerts-path', type=str, default="service-alerts.html",
-                        help="Path to a local HTML file containing service alerts to inject at the top.")
+    parser.add_argument('--service-alerts', type=str, nargs='?',
+                        const="https://brightspace.brocku.ca/d2l/le/news/rss/249302/course?token=apqljg7nhrr09cs811&ou=249302", default=None,
+                        help="Target RSS feed endpoint for service degradation alerts.")
     parser.add_argument('--output-path', type=str, default="./brock_updates.html",
                         help="Destination write path for the generated static HTML structure.")
     parser.add_argument('--event-offset', type=int, default=900,
@@ -532,7 +556,7 @@ def main():
     args = parser.parse_args()
 
     # Process individual panels using CLI configs
-    local_alert_section = process_local_alerts(args.service_alerts_path)
+    service_alerts_section = process_service_alerts(args.service_alerts, args.max_chars) if args.service_alerts else ""
     microsoft_section = process_microsoft_status(args.microsoft_status, args.max_chars) if args.microsoft_status else ""
 
     news_section = ""
@@ -601,7 +625,7 @@ def main():
     </style>
 </head>
 <body>
-{local_alert_section}
+{service_alerts_section}
 {microsoft_section}
 {news_section}
 {sports_section}
