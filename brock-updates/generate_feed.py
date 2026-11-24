@@ -22,6 +22,7 @@ import argparse
 import urllib.request
 import feedparser
 import xml.etree.ElementTree as ET
+from html.parser import HTMLParser
 from urllib.parse import quote
 from datetime import datetime, timezone, timedelta
 from dateutil import parser
@@ -117,23 +118,99 @@ def sanitize_text(text):
     return html.escape(raw_text, quote=True)
 
 
+class _SafeDescriptionParser(HTMLParser):
+    """Sanitizes HTML descriptions, preserving safe <a> links and block breaks within max_chars."""
+
+    def __init__(self, max_chars=None):
+        super().__init__(convert_charrefs=True)
+        self.max_chars = max_chars
+        self.char_count = 0
+        self.truncated = False
+        self.in_link = False
+        self.skip_depth = 0
+        self.tokens = []
+
+    def handle_starttag(self, tag, attrs):
+        if self.truncated:
+            return
+        tag = tag.lower()
+        if tag in ("script", "style"):
+            self.skip_depth += 1
+            return
+        if self.skip_depth > 0:
+            return
+
+        if tag == "br":
+            self.tokens.append("\n")
+        elif tag == "a" and not self.in_link:
+            href = next((val for key, val in attrs if key.lower() == "href" and val), "")
+            safe_href = sanitize_url(href)
+            if safe_href != "#":
+                self.tokens.append(f'<a href="{safe_href}" target="_blank" rel="noopener">')
+                self.in_link = True
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        if tag in ("script", "style") and self.skip_depth > 0:
+            self.skip_depth -= 1
+            return
+        if self.skip_depth > 0:
+            return
+
+        if tag == "a" and self.in_link:
+            self.tokens.append("</a>")
+            self.in_link = False
+        elif tag in ("p", "div", "li") and not self.truncated:
+            self.tokens.append("\n")
+
+    def handle_data(self, data):
+        if self.truncated or self.skip_depth > 0 or not data:
+            return
+
+        clean_data = re.sub(r'[\r\n]+', ' ', data)
+        if not self.tokens or self.tokens[-1] == "\n":
+            clean_data = clean_data.lstrip()
+        if not clean_data:
+            return
+
+        if self.max_chars is not None:
+            remaining = self.max_chars - self.char_count
+            if len(clean_data) > remaining:
+                snippet = clean_data[:remaining].rstrip() + "..."
+                self.tokens.append(html.escape(snippet, quote=True))
+                self.char_count = self.max_chars
+                self.truncated = True
+                if self.in_link:
+                    self.tokens.append("</a>")
+                    self.in_link = False
+                return
+
+        self.tokens.append(html.escape(clean_data, quote=True))
+        self.char_count += len(clean_data)
+
+    def get_html(self):
+        if self.in_link:
+            self.tokens.append("</a>")
+            self.in_link = False
+
+        lines = []
+        for raw_line in "".join(self.tokens).split("\n"):
+            line = raw_line.strip()
+            visible_text = re.sub(r'<[^>]+>', '', line).strip()
+            if visible_text:
+                lines.append(line)
+        return "<br>".join(lines)
+
+
 def sanitize_rss_description(description, max_chars=None):
-    """Converts an RSS description to escaped text, respects length limits, and preserves block breaks."""
+    """Converts an RSS description to safe HTML, preserving validated <a> links and block breaks."""
     if not description:
         return ""
-    text = html.unescape(str(description))
-    text = re.sub(r'<br\b[^>]*>|</(?:div|p|li)\s*>', '\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<[^>]+>', '', text)
-    text = html.unescape(text).strip()
-
-    if max_chars and len(text) > max_chars:
-        text = text[:max_chars] + "..."
-
-    return "<br>".join(
-        html.escape(line.strip(), quote=True)
-        for line in text.splitlines()
-        if line.strip()
-    )
+    unescaped = html.unescape(str(description))
+    desc_parser = _SafeDescriptionParser(max_chars=max_chars)
+    desc_parser.feed(unescaped)
+    desc_parser.close()
+    return desc_parser.get_html()
 
 
 def extract_first_paragraph_or_truncate(entry, max_chars):
@@ -216,7 +293,6 @@ def render_alert_banner(box_class, heading_url, heading_text, item_url, item_tit
             </div>
         </div>
     </div>\n'''
-
 
 # --- Feed Processors --- SVG images for special alerts
 
