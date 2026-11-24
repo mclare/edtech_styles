@@ -651,10 +651,10 @@ def main():
             clean_proposed = re.sub(r'<meta created="[^"]*">', '', final_html)
 
             if clean_existing == clean_proposed:
-                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Content unchanged. Skipping file modification to keep upstream caches primed.")
+                print(f"[{datetime.now(LOCAL_TZ).strftime('%Y-%m-%d %H:%M:%S %Z')}] Content unchanged for {args.output_path}. Skipping file modification to keep upstream caches primed.")
                 return
         except Exception as e:
-            print(f"Warning: Cache check read mismatch error: {e}", file=sys.stderr)
+            print(f"Warning: Cache check read mismatch error for {args.output_path}: {e}", file=sys.stderr)
 
     # Collision-safe atomic write pattern
     output_dir = os.path.dirname(os.path.abspath(args.output_path))
@@ -665,14 +665,14 @@ def main():
             tmp_file.write(final_html)
         os.chmod(temp_path, 0o644)
         os.replace(temp_path, args.output_path)
-        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Content shifted! Static HTML written successfully.")
+        print(f"[{datetime.now(LOCAL_TZ).strftime('%Y-%m-%d %H:%M:%S %Z')}] Content shifted! Static HTML written successfully to {args.output_path}.")
     except Exception as e:
         if temp_path and os.path.exists(temp_path):
             try:
                 os.remove(temp_path)
             except OSError:
                 pass
-        print(f"File writing failure encountered on path target destinations: {e}", file=sys.stderr)
+        print(f"File writing failure encountered for {args.output_path}: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":
